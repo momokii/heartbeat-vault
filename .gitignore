@@ -1,0 +1,50 @@
+# ── Secrets & environment (NEVER commit real secrets) ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials*.json
+service-account*.json
+
+# ── Local agent/tooling state (machine-specific) ──
+.omo/
+.codegraph
+
+# ── OS artifacts ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors / IDEs ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Node.js (activate when JS/TS stack is chosen) ──
+# node_modules/
+# dist/
+# .next/
+# coverage/
+
+# ── Python (activate when Python stack is chosen) ──
+# __pycache__/
+# *.py[cod]
+# .venv/
+# venv/
+# .pytest_cache/
+# .mypy_cache/
+
+# ── Go (activate when Go stack is chosen) ──
+# bin/
+# *.test
+# *.out
+
+# ── Rust (activate when Rust stack is chosen) ──
+# target/
+# Cargo.lock
