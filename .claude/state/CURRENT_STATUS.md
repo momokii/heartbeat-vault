@@ -34,5 +34,7 @@ None.
 - 2026-09-18 — Infrastructure scaffolded (session 0). No product code yet.
 - 2026-09-18 — Repo bootstrap complete: git init (main), .gitignore, .env.example,
   root README, Conventional Commits wired in. `.env` verified gitignored.
-  Nothing committed yet — awaiting user go-ahead for initial commit.
+- 2026-09-18 — Initial commit `651fcae` created
+  (`chore(repo): bootstrap agent infrastructure and repo scaffolding`).
+  Working tree clean. Ready for first development task.
   [Agent must update this timestamp and append a session summary after every session.]
