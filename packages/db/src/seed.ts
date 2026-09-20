@@ -1,6 +1,10 @@
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
-import { Pool } from 'pg';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import pg from 'pg';
+
+const { Pool } = pg;
 
 export interface SeedOptions {
   readonly connectionString?: string;
@@ -33,7 +37,12 @@ export async function seed(options: SeedOptions = {}): Promise<void> {
   }
 }
 
-const isMain = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+// Realpath comparison: pnpm installs workspace deps as symlinks, so argv[1]
+// (symlinked path) and import.meta.url (real path) differ by string but not by
+// identity — naive equality silently skips this CLI entry inside containers.
+const isMain =
+  process.argv[1] !== undefined &&
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 
 if (isMain) {
   seed()

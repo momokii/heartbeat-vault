@@ -1,6 +1,9 @@
 import { join, dirname } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Pool } from 'pg';
+import pg from 'pg';
+
+const { Pool } = pg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -37,7 +40,12 @@ export async function migrate(options: MigrateOptions = {}): Promise<void> {
 }
 
 // CLI entry: `tsx src/migrate.ts` or `pnpm db:migrate`
-const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
+// Realpath comparison: pnpm installs workspace deps as symlinks, so argv[1]
+// (symlinked path) and import.meta.url (real path) differ by string but not by
+// identity — naive equality silently skips this CLI entry inside containers.
+const isMain =
+  process.argv[1] !== undefined &&
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
 
 if (isMain) {
   migrate()
