@@ -4,6 +4,11 @@ import cookie from '@fastify/cookie';
 import type { Pool } from 'pg';
 import { registerSetupRoutes } from './routes/setup.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerTwoFactorRoutes } from './routes/two-factor.js';
+import { registerInviteRoutes } from './routes/invites.js';
+import { registerUserRoutes } from './routes/users.js';
+import { registerAdminRoutes } from './routes/admin.js';
+import { registerOpenRegistrationRoute } from './routes/register.js';
 
 export type BuildServerOptions = {
   readonly pool: Pool;
@@ -38,6 +43,11 @@ export async function buildServer(
 
   await registerSetupRoutes(app, pool);
   await registerAuthRoutes(app, pool);
+  await registerTwoFactorRoutes(app, pool);
+  await registerInviteRoutes(app, pool);
+  await registerUserRoutes(app, pool);
+  await registerAdminRoutes(app, pool);
+  await registerOpenRegistrationRoute(app, pool);
 
   return app;
 }

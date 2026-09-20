@@ -8,6 +8,13 @@
       "when": 1789868619724,
       "tag": "0000_brown_titania",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789872000000,
+      "tag": "0001_totp_webauthn",
+      "breakpoints": true
     }
   ]
 }

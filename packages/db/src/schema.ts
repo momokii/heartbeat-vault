@@ -5,6 +5,7 @@ import {
   text,
   integer,
   serial,
+  bigint,
   boolean,
   timestamp,
   jsonb,
@@ -29,6 +30,9 @@ export const users = pgTable(
     email: text('email').notNull().unique(),
     passwordHash: text('password_hash').notNull(),
     totpSecretEncrypted: bytea('totp_secret_encrypted'),
+    webauthnUserId: bytea('webauthn_user_id'),
+    totpVerifiedAt: timestamp('totp_verified_at', { withTimezone: true }),
+    totpLastCounter: bigint('totp_last_counter', { mode: 'number' }).notNull().default(0),
     role: text('role').notNull().default('user'),
     failedAttempts: integer('failed_attempts').notNull().default(0),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
@@ -261,6 +265,8 @@ export const sessions = pgTable('sessions', {
     .default(sql`clock_timestamp()`),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  totpPending: boolean('totp_pending').notNull().default(false),
+  webauthnChallenge: text('webauthn_challenge'),
 });
 
 // ── app_config ───────────────────────────────────────────────────────────
@@ -268,6 +274,33 @@ export const appConfig = pgTable('app_config', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .default(sql`clock_timestamp()`),
+});
+
+export const recoveryCodes = pgTable('recovery_codes', {
+  id: serial('id').primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull().unique(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .default(sql`clock_timestamp()`),
+});
+
+export const webauthnCredentials = pgTable('webauthn_credentials', {
+  id: text('id').primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  publicKey: bytea('public_key').notNull(),
+  counter: bigint('counter', { mode: 'number' }).notNull().default(0),
+  transports: text('transports'),
+  deviceType: text('device_type'),
+  backedUp: boolean('backed_up').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .default(sql`clock_timestamp()`),
 });

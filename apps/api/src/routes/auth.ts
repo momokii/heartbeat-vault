@@ -53,8 +53,10 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
       role: string;
       failed_attempts: number;
       locked_until: string | null;
+      totp_verified_at: string | null;
     }>(
-      `SELECT id, email, password_hash, role, failed_attempts, locked_until FROM users WHERE email=$1`,
+      `SELECT id, email, password_hash, role, failed_attempts, locked_until, totp_verified_at
+       FROM users WHERE email=$1`,
       [email],
     );
 
@@ -129,13 +131,17 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
       const token = randomBytes(32).toString('base64url');
       const tokenHash = hashToken(token);
       const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+      // TOTP-enabled users get a step-up session: valid cookie, but every
+      // non-2FA route rejects it with 403 totp_pending until the challenge
+      // completes. Users without TOTP get a full session (200, unchanged).
+      const stepUp = user.totp_verified_at !== null;
       await client.query(
-        `INSERT INTO sessions (user_id, token_hash, expires_at) VALUES ($1,$2,$3)`,
-        [user.id, tokenHash, expiresAt],
+        `INSERT INTO sessions (user_id, token_hash, expires_at, totp_pending) VALUES ($1,$2,$3,$4)`,
+        [user.id, tokenHash, expiresAt, stepUp],
       );
       await writeAudit(client, {
         actorId: user.id,
-        action: 'auth_login',
+        action: stepUp ? 'auth_stepup_started' : 'auth_login',
         target: user.id,
         ip: request.ip,
         requestId: request.id,
@@ -145,6 +151,9 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         ...cookieOpts(),
         expires: expiresAt,
       });
+      if (stepUp) {
+        return reply.status(202).send({ stepUp: 'totp' });
+      }
       return reply.status(200).send({ id: user.id, email: user.email, role: user.role });
     } catch (err) {
       try {

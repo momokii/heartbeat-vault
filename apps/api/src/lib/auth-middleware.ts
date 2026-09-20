@@ -7,6 +7,7 @@ export type AuthUser = {
   readonly email: string;
   readonly role: string;
   readonly sessionId: string;
+  readonly sessionTotpPending: boolean;
 };
 
 declare module 'fastify' {
@@ -20,7 +21,17 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-export function createAuthPreHandler(pool: Pool) {
+export type AuthPreHandlerOptions = {
+  /**
+   * Accept sessions still awaiting their TOTP step-up (totp_pending=true).
+   * Only 2FA routes may set this — everything else fails closed with
+   * 403 totp_pending so a half-authenticated session can never reach
+   * protected surfaces.
+   */
+  readonly allowTotpPending?: boolean;
+};
+
+export function createAuthPreHandler(pool: Pool, options?: AuthPreHandlerOptions) {
   return async function authPreHandler(
     request: FastifyRequest,
     reply: FastifyReply,
@@ -36,8 +47,9 @@ export function createAuthPreHandler(pool: Pool) {
       email: string;
       role: string;
       session_id: string;
+      totp_pending: boolean;
     }>(
-      `SELECT u.id, u.email, u.role, s.id as session_id
+      `SELECT u.id, u.email, u.role, s.id as session_id, s.totp_pending
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()`,
       [tokenHash],
@@ -47,7 +59,17 @@ export function createAuthPreHandler(pool: Pool) {
       return;
     }
     const row = res.rows[0]!;
-    request.user = { id: row.id, email: row.email, role: row.role, sessionId: row.session_id };
+    if (row.totp_pending && !options?.allowTotpPending) {
+      await reply.status(403).send({ error: 'totp_pending' });
+      return;
+    }
+    request.user = {
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      sessionId: row.session_id,
+      sessionTotpPending: row.totp_pending,
+    };
     request.sessionTokenHash = tokenHash;
   };
 }
