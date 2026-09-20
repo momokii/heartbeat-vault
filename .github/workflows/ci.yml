@@ -1,0 +1,63 @@
+# CI gate — must pass before merge (BRIEF §12).
+# Runs the exact commands a maintainer runs locally; no fabricated results.
+# Secret scanning via gitleaks; SAST runs separately in codeql.yml.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright chromium (E2E)
+        run: pnpm --filter @heartbeat-vault/e2e exec playwright install --with-deps chromium
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Tests (unit, integration, crypto, E2E)
+        run: pnpm test
+
+      - name: Dependency audit (fails on new advisories; known dev-only set ignored via pnpm.auditConfig)
+        run: pnpm audit --audit-level=low
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

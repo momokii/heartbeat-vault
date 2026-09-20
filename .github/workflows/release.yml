@@ -1,0 +1,113 @@
+# Release images — triggered by release-please tags (BRIEF §12).
+# Signs with cosign keyless (OIDC) — no stored secrets required.
+# Required settings: none beyond the explicit permissions below; the GHCR
+# package is created on first publish (set its visibility/link in repo settings).
+name: Release Images
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @heartbeat-vault/e2e exec playwright install --with-deps chromium
+
+      - run: pnpm format:check
+
+      - run: pnpm lint
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm audit --audit-level=low
+
+  images:
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless signing via OIDC
+    env:
+      REGISTRY: ghcr.io
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive image name and version
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "IMAGE=$REGISTRY/${REPOSITORY,,}/api" >> "$GITHUB_ENV"
+          echo "VERSION=${REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/api:v${{ env.VERSION }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/api:latest
+
+      - name: Container scan (trivy — fails the release on CRITICAL/HIGH)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/api:v${{ env.VERSION }}
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ github.repository }}/api:v${{ env.VERSION }}
+          format: spdx-json
+          artifact-name: sbom-api-v${{ env.VERSION }}.spdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-api-v${{ env.VERSION }}
+          path: ${{ github.workspace }}/*.spdx.json
+          if-no-files-found: warn
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (cosign keyless)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/api
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"

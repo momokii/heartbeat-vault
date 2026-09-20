@@ -1,0 +1,20 @@
+# Versioning — Conventional Commits → release PRs → tags (BRIEF §12).
+# Merging the release-please PR bumps the version, updates CHANGELOG.md,
+# and creates the vX.Y.Z tag — which triggers release.yml (signed images).
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          release-type: node
