@@ -45,6 +45,7 @@ export async function materializeDueTriggers(pool: Pool, now: Date): Promise<num
             '{"kind":"fire"}'::jsonb
      FROM switches s
      WHERE s.status = 'active' AND s.next_deadline <= $1
+       AND NOT EXISTS (SELECT 1 FROM vault_waits w WHERE w.switch_id = s.id)
      ON CONFLICT DO NOTHING
      RETURNING id`,
     [now, FIRE_LAG_SECONDS],
@@ -218,14 +219,4 @@ export async function processJob(pool: Pool, job: TriggerJobRow, workerId: strin
   } finally {
     client.release();
   }
-}
-
-export async function runSchedulerTick(pool: Pool, workerId: string, now: Date): Promise<number> {
-  const materialized = await materializeDueTriggers(pool, now);
-  await pool.query(
-    `INSERT INTO scheduler_heartbeat (id, last_tick_at, tick_owner) VALUES (1, $1, $2)
-     ON CONFLICT (id) DO UPDATE SET last_tick_at = EXCLUDED.last_tick_at, tick_owner = EXCLUDED.tick_owner`,
-    [now, workerId],
-  );
-  return materialized;
 }

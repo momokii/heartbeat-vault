@@ -43,7 +43,7 @@ async function loadSwitchForOwner(
   return row;
 }
 
-async function recordHeartbeat(
+export async function recordHeartbeat(
   client: PoolClient,
   switchId: string,
   method: string,
@@ -60,6 +60,7 @@ async function recordHeartbeat(
       WHERE id=$1 AND status='active'`,
     [switchId],
   );
+  await client.query(`DELETE FROM vault_waits WHERE switch_id=$1`, [switchId]);
   await writeAudit(client, {
     actorId: audit.actorId ?? null,
     action: 'heartbeat_checkin',

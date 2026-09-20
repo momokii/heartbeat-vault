@@ -11,9 +11,9 @@ import {
   failJob,
   reapExpiredLeases,
   processJob,
-  runSchedulerTick,
   type TriggerJobRow,
 } from './lib/trigger-engine.js';
+import { runSchedulerTick } from './lib/downtime.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
