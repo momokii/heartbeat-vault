@@ -3,12 +3,14 @@ import { z } from 'zod';
 import type { Pool } from 'pg';
 import { createHash } from 'node:crypto';
 import { timingSafeEqual } from 'node:crypto';
+import { writeAudit } from '../lib/audit.js';
 
+// Name field intentionally removed: users table has no name column.
+// Accepting then dropping it would be sloppy — see DECISIONS_LOG.
 const setupBodySchema = z.object({
   token: z.string().min(1),
   email: z.string().email(),
   password: z.string().min(12),
-  name: z.string().min(1).trim().optional(),
 });
 
 function verifyTokenHash(token: string, expectedHex: string): boolean {
@@ -94,11 +96,13 @@ export async function registerSetupRoutes(app: FastifyInstance, pool: Pool): Pro
          ON CONFLICT (key) DO UPDATE SET value=clock_timestamp()::text, updated_at=clock_timestamp()`,
       );
 
-      const auditHash = createHash('sha256').update(`setup:${userId}:${Date.now()}`).digest();
-      await client.query(
-        `INSERT INTO audit_log (action, target, ip, request_id, hash) VALUES ($1,$2,$3,$4,$5)`,
-        ['setup_completed', userId, request.ip, request.id, auditHash],
-      );
+      await writeAudit(client, {
+        actorId: userId,
+        action: 'setup_completed',
+        target: userId,
+        ip: request.ip,
+        requestId: request.id,
+      });
 
       await client.query('COMMIT');
       return reply.status(201).send({ id: userId, email, role: 'admin' });

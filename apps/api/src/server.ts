@@ -3,6 +3,7 @@ import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
 import type { Pool } from 'pg';
 import { registerSetupRoutes } from './routes/setup.js';
+import { registerAuthRoutes } from './routes/auth.js';
 
 export type BuildServerOptions = {
   readonly pool: Pool;
@@ -36,6 +37,7 @@ export async function buildServer(
   });
 
   await registerSetupRoutes(app, pool);
+  await registerAuthRoutes(app, pool);
 
   return app;
 }
