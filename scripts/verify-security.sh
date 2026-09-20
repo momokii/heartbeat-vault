@@ -121,11 +121,13 @@ _unpinned_from=$(awk '
       if (line !~ /@sha256:/) print line
     }
   }
-' apps/api/Dockerfile 2>/dev/null)
+ ' apps/api/Dockerfile apps/web/Dockerfile 2>/dev/null)
 _unpinned_images=''
 if [ -f docker-compose.yml ]; then
   _unpinned_images=$(grep -hE '^[[:space:]]*image:' docker-compose.yml docker-compose.prod.yml 2>/dev/null |
-    grep -v '@sha256:' | grep -v 'heartbeat-vault-api:local' || true)
+    grep -v '@sha256:' |
+    grep -vE '^[[:space:]]*image:[[:space:]]*heartbeat-vault-api:local[[:space:]]*$' |
+    grep -vE '^[[:space:]]*image:[[:space:]]*heartbeat-vault-caddy:local[[:space:]]*$' || true)
 fi
 if [ -z "$_unpinned_images" ] && [ -z "$_unpinned_from" ]; then
   add_result images-pinned "Images pinned by digest" PASS \

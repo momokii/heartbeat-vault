@@ -7,7 +7,7 @@
 
 {
 	# Admin API bound to localhost only — healthcheck probes this.
-	admin 0.0.0.0:2019
+    admin 127.0.0.1:2019
 	# Global options: no debug, strict TLS defaults.
 	auto_https off
 }
