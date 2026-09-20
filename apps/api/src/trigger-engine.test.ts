@@ -4,6 +4,8 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   materializeDueTriggers,
   claimJob,
@@ -16,6 +18,7 @@ import {
 import { runSchedulerTick } from './lib/downtime.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 
 let container: StartedPostgreSqlContainer;
 let pool: Pool;
@@ -251,4 +254,90 @@ describe('runSchedulerTick', () => {
     expect(hb.rows[0]!.tick_owner).toBe('worker-a');
     expect(hb.rows[0]!.last_tick_at).toBeInstanceOf(Date);
   });
+});
+
+describe('DB restart (crash safety)', () => {
+  it('claim survives a hard restart; reaper and re-claim still work after recovery', async () => {
+    await createActiveSwitch();
+    await materializeDueTriggers(pool, new Date());
+    const later = new Date(Date.now() + (14 * 86400 * 0.5 + 86400 + 3600) * 1000);
+    const job = (await claimJob(pool, 'w1', later))!;
+    expect(job).not.toBeNull();
+
+    // docker kill SIGKILLs the postmaster (PID 1): a true crash. start replays WAL.
+    // testcontainers restart() is unusable here: its stop step removes the container.
+    const containerName = container.getName().replace(/^\//, '');
+    // Close the old pool first so no client lingers to observe the crash.
+    await pool.end();
+    await execFileAsync('docker', ['kill', containerName]);
+    await execFileAsync('docker', ['start', containerName]);
+
+    // Docker may reassign the random host port on start, so recovery means
+    // discovering the current 5432 mapping and opening a fresh pool.
+    let db: Pool | null = null;
+    let lastError = 'never attempted';
+    for (let attempt = 0; attempt < 40 && db === null; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const portOutput = await execFileAsync('docker', ['port', containerName, '5432/tcp'])
+        .then(result => result.stdout.trim())
+        .catch((error: unknown) => {
+          lastError = String(error);
+          return '';
+        });
+      const hostPort =
+        /0\.0\.0\.0:(\d+)/.exec(portOutput)?.[1] ?? /:(\d+)\s*$/m.exec(portOutput)?.[1];
+      if (hostPort === undefined) continue;
+      const uri = new URL(container.getConnectionUri());
+      uri.port = hostPort;
+      const candidate = new Pool({ connectionString: uri.toString() });
+      try {
+        await candidate.query('SELECT 1');
+        db = candidate;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        await candidate.end().catch(() => {});
+      }
+    }
+    if (db === null) {
+      const state = await execFileAsync('docker', [
+        'ps',
+        '-a',
+        '--filter',
+        `name=${containerName}`,
+        '--format',
+        '{{.Names}} | {{.Status}} | {{.Ports}}',
+      ])
+        .then(result => result.stdout.trim())
+        .catch((error: unknown) => String(error));
+      const logs = await execFileAsync('docker', ['logs', '--tail', '12', containerName])
+        .then(result => `${result.stdout}${result.stderr}`.trim())
+        .catch((error: unknown) => String(error));
+      lastError = `${lastError} | state=[${state}] logs=[${logs.slice(-700)}]`;
+    }
+    expect(db !== null, lastError).toBe(true);
+    const dbPool = db!;
+
+    const after = await dbPool.query<{ state: string; owner_id: string }>(
+      `SELECT state, owner_id FROM trigger_jobs WHERE id=$1`,
+      [job!.id],
+    );
+    expect(after.rows[0]!.state).toBe('running');
+    expect(after.rows[0]!.owner_id).toBe('w1');
+
+    await dbPool.query(
+      `UPDATE trigger_jobs SET lease_expires = now() - interval '1 sec' WHERE id=$1`,
+      [job!.id],
+    );
+    expect(await reapExpiredLeases(dbPool, new Date())).toBe(1);
+    const reclaimed = await claimJob(dbPool, 'w2', later);
+    expect(reclaimed).not.toBeNull();
+    expect(reclaimed!.ownerId).toBe('w2');
+    await completeJob(dbPool, reclaimed!.id, 'w2');
+    const done = await dbPool.query<{ state: string }>(
+      `SELECT state FROM trigger_jobs WHERE id=$1`,
+      [job!.id],
+    );
+    expect(done.rows[0]!.state).toBe('succeeded');
+    pool = dbPool;
+  }, 120_000);
 });
