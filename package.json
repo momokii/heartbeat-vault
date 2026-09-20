@@ -16,6 +16,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",
+    "verify:security": "bash scripts/verify-security.sh",
+    "audit": "pnpm audit --audit-level=low",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
@@ -40,5 +42,29 @@
     "turbo": "2.5.4",
     "typescript": "5.7.3",
     "typescript-eslint": "8.70.0"
+  },
+  "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-2mjp-6q6p-2qxm",
+        "GHSA-35p6-xmwp-9g52",
+        "GHSA-3qcw-2rhx-2726",
+        "GHSA-4992-7rv2-5pvq",
+        "GHSA-67mh-4wv8-2f99",
+        "GHSA-8cj5-5rvv-wf4v",
+        "GHSA-8xcm-r25x-g524",
+        "GHSA-g8m3-5g58-fq7m",
+        "GHSA-g9mf-h72j-4rw9",
+        "GHSA-hcf7-66rw-9f5r",
+        "GHSA-m8rv-5g2x-5cg5",
+        "GHSA-p88m-4jfj-68fv",
+        "GHSA-pq67-2wwv-3xjx",
+        "GHSA-v3r7-h72x-cjcm",
+        "GHSA-v9p9-hfj2-hcw8",
+        "GHSA-vj76-c3g6-qr5v",
+        "GHSA-vrm6-8vpv-qv8q",
+        "GHSA-vxpw-j846-p89q"
+      ]
+    }
   }
 }

@@ -5,19 +5,25 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "dev": "tsx src/main.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
     "@testcontainers/postgresql": "10.14.0",
     "@types/node": "22.13.10",
+    "@types/nodemailer": "7.0.4",
     "@types/pg": "8.11.0",
+    "@vitest/coverage-v8": "5.0.1",
     "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
     "globals": "16.5.0",
     "testcontainers": "10.14.0",
+    "tsx": "4.19.1",
     "typescript": "5.7.3",
     "typescript-eslint": "8.70.0",
     "vitest": "5.0.1"
@@ -29,7 +35,9 @@
     "@heartbeat-vault/db": "workspace:*",
     "@simplewebauthn/server": "13.3.3",
     "drizzle-orm": "0.45.2",
-    "fastify": "5.6.2",
+    "fastify": "5.12.5",
+    "ky": "1.14.0",
+    "nodemailer": "10.0.10",
     "otplib": "13.5.0",
     "pg": "8.13.3",
     "zod": "4.6.5"

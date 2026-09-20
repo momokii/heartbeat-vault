@@ -7,14 +7,22 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"test: no tests yet\""
+    "test": "pnpm --filter @heartbeat-vault/crypto build && pnpm --filter @heartbeat-vault/db build && pnpm --filter @heartbeat-vault/api build && playwright test"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@playwright/test": "1.63.0",
+    "@testcontainers/postgresql": "10.14.0",
+    "@types/node": "22.13.10",
+    "@types/pg": "8.11.0",
     "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
     "globals": "16.5.0",
+    "testcontainers": "10.14.0",
     "typescript": "5.7.3",
     "typescript-eslint": "8.70.0"
+  },
+  "dependencies": {
+    "pg": "8.13.3"
   }
 }

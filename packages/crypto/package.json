@@ -4,10 +4,22 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./envelope": "./src/envelope.ts",
-    "./asymmetric": "./src/asymmetric.ts",
-    "./sharing": "./src/sharing.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./envelope": {
+      "types": "./dist/envelope.d.ts",
+      "default": "./dist/envelope.js"
+    },
+    "./asymmetric": {
+      "types": "./dist/asymmetric.d.ts",
+      "default": "./dist/asymmetric.js"
+    },
+    "./sharing": {
+      "types": "./dist/sharing.d.ts",
+      "default": "./dist/sharing.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
