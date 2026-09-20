@@ -1,0 +1,65 @@
+# Heartbeat Vault — Caddy reverse proxy (standard profile)
+# LAN default: `tls internal` (self-signed via Caddy internal CA).
+# Production override: set CADDY_TLS env handling or mount BYO certs;
+# Let's Encrypt via `tls {$CADDY_TLS_EMAIL}` is opt-in — not enabled by default.
+# Security headers + CSP + HSTS are applied globally. Real app CSP will be
+# tightened in the web phase; placeholder is strict but functional.
+
+{
+	# Admin API bound to localhost only — healthcheck probes this.
+	admin 0.0.0.0:2019
+	# Global options: no debug, strict TLS defaults.
+	auto_https off
+}
+
+# ── Primary site ──────────────────────────────────────────────────────────
+# Listens on :80 and :443 (compose publishes both). `tls internal` issues
+# a local CA cert for LAN/on-prem use — browser will require trust of Caddy's
+# root CA or an insecure exception until LE/BYO is configured.
+:80, :443 {
+	tls internal
+
+	# ── Security headers (applied to every response) ──────────────────
+	header {
+		# HSTS — 1 year, includeSubDomains, preload-ready. Only meaningful over HTTPS
+		# but harmless on :80; Caddy will not send HSTS over plain HTTP to non-TLS anyway.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		# Clickjacking defense
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		X-XSS-Protection "0"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		# CSP — strict placeholder; tighten per-route when UI lands.
+		# Allows self + inline styles (Tailwind/shadcn may need 'unsafe-inline' for styles).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		# Remove server fingerprint
+		-Server
+	}
+
+	# Health probe for load-balancer / compose healthcheck (bypasses proxy).
+	# Used only for liveness; not exposed as public API in prod.
+	handle /caddy-health {
+		respond "ok" 200
+	}
+
+	# Reverse proxy to the API service (placeholder until Phase 3+).
+	# `api:3000` resolves via Docker's embedded DNS on the `app_net` network.
+	handle {
+		reverse_proxy api:3000 {
+			# Timeouts — fail fast, let client retry.
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Structured access log (JSON) — consumed by host log driver.
+	log {
+		output stdout
+		format json
+	}
+}

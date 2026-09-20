@@ -1,0 +1,29 @@
+# Heartbeat Vault — development overrides
+# Loaded automatically by `docker compose up` (base + override).
+# Adds: live-reload mounts, localhost-bound debug ports, verbose logging.
+# MUST NOT be used in production — production uses `-f docker-compose.prod.yml`.
+
+services:
+  db:
+    # Expose Postgres on loopback only for local tooling (psql, Drizzle Studio).
+    # Never 0.0.0.0 — least-privilege. Override port via DB_PORT in .env.
+    ports:
+      - "127.0.0.1:${DB_PORT:-15432}:5432"
+
+  api:
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      NODE_ENV: development
+    # Placeholder: when real app code lands (Phase 3+), mount source for HMR:
+    # volumes:
+    #   - ./apps/api/src:/app/apps/api/src:ro
+    #   - ./packages:/app/packages:ro
+    # For now, no mounts — placeholder image is self-contained.
+    # Dev-only: expose API directly on loopback for debugging bypassing Caddy.
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-13001}:3000"
+
+  caddy:
+    # In dev, optionally expose admin API on loopback for `caddy reload` debugging.
+    ports:
+      - "127.0.0.1:${CADDY_ADMIN_PORT:-12019}:2019"

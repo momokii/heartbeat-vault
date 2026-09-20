@@ -1,0 +1,59 @@
+# Heartbeat Vault — production overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Load ONLY base + prod (override.yml is ignored with explicit -f).
+# Enforces: restart policies, resource limits, no volume mounts, no debug ports.
+
+services:
+  db:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          memory: 256M
+    # Harden DB: no ports published in prod — internal only.
+    # `docker-compose.override.yml` ports are absent when using `-f` prod.
+    # Explicitly ensure no debug exposure.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          memory: 128M
+    # No mounts in prod — image is immutable.
+    # No `ports:` — only Caddy publishes.
+    read_only: false
+    # `read_only: true` deferred until Phase 3+ when tmp/cache paths are known.
+    # Placeholder marks intent; enabling now would break nothing but is premature.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          memory: 64M
+    # No admin port published in prod. Data/config volumes remain (TLS state).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
