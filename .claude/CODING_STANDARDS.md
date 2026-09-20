@@ -55,8 +55,8 @@
 
 - Every public function must have a descriptive comment or docstring (purpose,
   params, return, errors raised).
-- Every non-obvious decision in code must have an inline comment explaining *why*,
-  not *what*.
+- Every non-obvious decision in code must have an inline comment explaining _why_,
+  not _what_.
 - Update user-facing docs (README, API contract) in the same change that alters
   behavior — never "docs later."
 

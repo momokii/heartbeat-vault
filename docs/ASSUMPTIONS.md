@@ -1,0 +1,8 @@
+# Assumptions Log
+
+> Per Brief Section 15 Phase 0 step 5: record every recommended default assumed when the user cannot answer.
+> Status: no assumptions adopted yet — pending clarifying questions this turn.
+
+| #   | Date       | Assumption                                                                                                                   | Reason                                                                                                                                                                                                   | Needs verification                                                                                               |
+| --- | ---------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| A1  | 2026-09-20 | Phase 0 design (`docs/DESIGN.md`) treated as approved by default; proceeding to implementation without interactive approval. | Non-interactive ultrawork loop session — Brief §15 Phase 0 step 5: proceed with recommended defaults. All 8 clarifying questions were answered explicitly; only the design-approval itself is defaulted. | User may still request design changes at any point; implementation follows the design doc, so changes propagate. |

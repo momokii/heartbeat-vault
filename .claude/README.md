@@ -23,16 +23,16 @@ project-level statement here as a placeholder to be replaced — not as fact.
 
 ## Where Things Live
 
-| Need | Location |
-|---|---|
-| Current state / blockers | `.claude/state/CURRENT_STATUS.md` |
-| Backlog / next task | `.claude/state/TASK_QUEUE.md` |
-| Past decisions + rationale | `.claude/state/DECISIONS_LOG.md` |
-| Behavior rules | `.claude/AGENT_RULES.md` |
-| Coding conventions | `.claude/CODING_STANDARDS.md` |
-| Security requirements | `.claude/SECURITY_STANDARDS.md` |
-| Environment behavior | `.claude/ENVIRONMENT_GUIDE.md` |
-| Checklists (feature / endpoint / test / bug) | `.claude/templates/` |
+| Need                                         | Location                          |
+| -------------------------------------------- | --------------------------------- |
+| Current state / blockers                     | `.claude/state/CURRENT_STATUS.md` |
+| Backlog / next task                          | `.claude/state/TASK_QUEUE.md`     |
+| Past decisions + rationale                   | `.claude/state/DECISIONS_LOG.md`  |
+| Behavior rules                               | `.claude/AGENT_RULES.md`          |
+| Coding conventions                           | `.claude/CODING_STANDARDS.md`     |
+| Security requirements                        | `.claude/SECURITY_STANDARDS.md`   |
+| Environment behavior                         | `.claude/ENVIRONMENT_GUIDE.md`    |
+| Checklists (feature / endpoint / test / bug) | `.claude/templates/`              |
 
 ## Self-Update Directive (mandatory)
 

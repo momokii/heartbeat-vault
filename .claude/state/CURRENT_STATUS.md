@@ -1,6 +1,6 @@
 ## Project Phase
 
-Initialization — Repository bootstrapped and ready for first development task.
+Phase 0 — Discovery and Design Gate (IN PROGRESS). Brief received 2026-09-20; no implementation permitted before design approval.
 
 ## Completed
 
@@ -10,10 +10,12 @@ Initialization — Repository bootstrapped and ready for first development task.
 - [x] `.gitignore` created — `.env`, secrets, OS/IDE artifacts covered
 - [x] `.env.example` created with documented placeholders
 - [x] Root `README.md` created
+- [x] Brief saved verbatim to `docs/BRIEF.md` (Phase 0 step 1)
+- [x] `docs/PROGRESS.md`, `docs/ASSUMPTIONS.md`, `CLAUDE.md` created
 
 ## In Progress
 
-- [ ] Awaiting first project task from user
+- [ ] Phase 0 gate: `docs/DESIGN.md` proposed 2026-09-20 — awaiting user approval (no implementation before approval)
 
 ## Blocked
 
@@ -21,9 +23,9 @@ None.
 
 ## Open Questions
 
-- Tech stack not yet determined
-- Project purpose not yet defined
-- Environment configuration not yet established
+- Tech stack: proposed default TypeScript monorepo (Brief §7) — pending Phase 0 approval
+- All Phase 0 clarifying questions (deployment size, channels, CI/registry, languages, license, threat priorities, release model, hardened profile) — asked 2026-09-20, answers pending
+- Product purpose now defined by `docs/BRIEF.md` (self-hosted dead man's switch)
 
 ## Security Notes
 
