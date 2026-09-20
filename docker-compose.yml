@@ -60,7 +60,7 @@ services:
     # Non-root enforced inside the Dockerfile (USER node, uid 1000).
     # No `user:` override needed — Dockerfile is authoritative.
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"import('node:http').then(({request})=>{const r=request({hostname:'127.0.0.1',port:process.env.PORT||3000,path:'/health',timeout:2000},res=>process.exit(res.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end();})\""]
+      test: ["CMD-SHELL", "node -e \"import('node:http').then(({request})=>{const r=request({hostname:'127.0.0.1',port:process.env.PORT||3000,path:'/api/health',timeout:2000},res=>process.exit(res.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end();})\""]
       interval: 10s
       timeout: 3s
       retries: 3

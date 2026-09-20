@@ -31,6 +31,8 @@ node_modules/
 dist/
 .next/
 coverage/
+test-results/
+playwright-report/
 .turbo/
 .pnpm-store/
 .husky/_
@@ -52,3 +54,6 @@ coverage/
 # ── Rust (activate when Rust stack is chosen) ──
 # target/
 # Cargo.lock
+
+# ── Local backups (never commit) ──
+backups/
