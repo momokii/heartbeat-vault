@@ -5,11 +5,11 @@
 
 ## Environment Definitions
 
-| Environment | Purpose | Characteristics |
-|---|---|---|
+| Environment   | Purpose                            | Characteristics                                                                                       |
+| ------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `development` | Local development and feature work | Debug mode on, verbose logging, hot reload, relaxed auth optional, no real external services required |
-| `staging` | Pre-production validation | Mirrors production config, uses real (sandboxed) services, no debug mode |
-| `production` | Live system | No debug, minimal logging, hardened config, real services and secrets |
+| `staging`     | Pre-production validation          | Mirrors production config, uses real (sandboxed) services, no debug mode                              |
+| `production`  | Live system                        | No debug, minimal logging, hardened config, real services and secrets                                 |
 
 ## Agent Behavior by Environment
 
@@ -68,10 +68,15 @@ Rules:
 - Application code reads config from the environment, never from a committed
   secrets file.
 
-## Health-Check / Test Commands (fill in once known)
+## Health-Check / Test Commands
 
-| Purpose | Command (placeholder) |
-|---|---|
-| Health check / startup | _TBD_ — record real command after first setup |
-| Run full test suite | _TBD_ — record real command after first setup |
-| Lint / typecheck | _TBD_ |
+| Purpose              | Command                             | Notes                                                |
+| -------------------- | ----------------------------------- | ---------------------------------------------------- |
+| Install dependencies | `pnpm install`                      | pnpm 9.15.9, Node >=20 <23                           |
+| Lint                 | `pnpm lint`                         | ESLint 9.39.5 flat config + typescript-eslint 8.70.0 |
+| Lint (per-package)   | `pnpm lint:packages`                | `turbo run lint` delegates to each workspace         |
+| Typecheck            | `pnpm typecheck`                    | `turbo run typecheck` → `tsc --noEmit` per workspace |
+| Format               | `pnpm format`                       | Prettier 3.9.8 — writes in place                     |
+| Format check         | `pnpm format:check`                 | Prettier --check (CI gate)                           |
+| Run full test suite  | `pnpm test`                         | `turbo run test` per workspace                       |
+| Pre-commit hook      | `pnpm exec lint-staged` (via Husky) | Runs eslint --fix + prettier --write on staged files |

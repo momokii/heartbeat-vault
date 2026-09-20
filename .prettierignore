@@ -1,0 +1,19 @@
+node_modules
+dist
+.next
+coverage
+.turbo
+pnpm-lock.yaml
+*.tsbuildinfo
+.husky/_
+
+# sibling-owned paths (formatted by owner; ignored here to avoid parallel conflicts)
+docs/adr
+packages/crypto/src
+compose.yml
+compose.yaml
+docker-compose.yml
+docker-compose.override.yml
+docker-compose.prod.yml
+Dockerfile
+Caddyfile
