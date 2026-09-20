@@ -199,6 +199,7 @@ export const deliveryJobs = pgTable(
     state: text('state').notNull().default('pending'),
     availableAt: timestamp('available_at', { withTimezone: true }).notNull(),
     attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(5),
     idempotencyKey: text('idempotency_key').notNull().unique(),
     payload: jsonb('payload'),
     lastError: text('last_error'),
