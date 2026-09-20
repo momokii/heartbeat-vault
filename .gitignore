@@ -26,11 +26,15 @@ desktop.ini
 *.swo
 *~
 
-# ── Node.js (activate when JS/TS stack is chosen) ──
-# node_modules/
-# dist/
-# .next/
-# coverage/
+# ── Node.js ──
+node_modules/
+dist/
+.next/
+coverage/
+.turbo/
+.pnpm-store/
+.husky/_
+*.tsbuildinfo
 
 # ── Python (activate when Python stack is chosen) ──
 # __pycache__/

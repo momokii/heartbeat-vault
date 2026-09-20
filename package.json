@@ -1,0 +1,43 @@
+{
+  "name": "heartbeat-vault",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Heartbeat Vault — self-hosted dead man's switch (monorepo root)",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.0.0 <23.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "eslint .",
+    "lint:packages": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,mts,cts,js,mjs,cjs}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "16.5.0",
+    "husky": "9.1.7",
+    "lint-staged": "17.5.1",
+    "prettier": "3.9.8",
+    "turbo": "2.5.4",
+    "typescript": "5.7.3",
+    "typescript-eslint": "8.70.0"
+  }
+}

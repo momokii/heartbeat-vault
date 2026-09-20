@@ -1,0 +1,20 @@
+{
+  "name": "@heartbeat-vault/channels",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"test: no tests yet\""
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "16.5.0",
+    "typescript": "5.7.3",
+    "typescript-eslint": "8.70.0"
+  }
+}
