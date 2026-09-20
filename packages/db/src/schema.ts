@@ -54,12 +54,15 @@ export const switches = pgTable(
     ownerId: uuid('owner_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    title: text('title').notNull().default(''),
     mode: text('mode').notNull(),
     status: text('status').notNull().default('active'),
     heartbeatInterval: interval('heartbeat_interval').notNull(),
     graceWindow: interval('grace_window').notNull(),
     dryRun: boolean('dry_run').notNull().default(false),
     releasePolicy: text('release_policy').notNull().default('fail_safe'),
+    heartbeatStartedAt: timestamp('heartbeat_started_at', { withTimezone: true }),
+    nextDeadline: timestamp('next_deadline', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .default(sql`clock_timestamp()`),

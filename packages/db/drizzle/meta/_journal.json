@@ -15,6 +15,13 @@
       "when": 1789872000000,
       "tag": "0001_totp_webauthn",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789958400000,
+      "tag": "0002_heartbeat_state",
+      "breakpoints": true
     }
   ]
 }
