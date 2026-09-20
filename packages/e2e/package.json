@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm --filter @heartbeat-vault/crypto build && pnpm --filter @heartbeat-vault/db build && pnpm --filter @heartbeat-vault/api build && playwright test"
+    "test": "pnpm --filter @heartbeat-vault/crypto build && pnpm --filter @heartbeat-vault/db build && pnpm --filter @heartbeat-vault/api build && playwright test",
+    "test:caddy-smoke": "playwright test -c caddy-smoke.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
