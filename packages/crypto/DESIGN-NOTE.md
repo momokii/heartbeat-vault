@@ -278,3 +278,47 @@ Error: Cannot find module './rotation.js' imported from .../src/rotation.test.ts
   no asymmetric/Shamir in this task (T2.4 deferred).
 - Strict TS, 2-space/single/100-width (prettier ignored via `.prettierignore`
   for `packages/crypto/src`), `envelope.ts` read-only except `index.ts` exports.
+
+---
+
+# T2.5 — KAT + Differential + Tamper + Coverage Gate (Wave 4, 2026-09-20)
+
+## Vectors — source-labeled, never fabricated
+
+| Primitive          | Vector source                                                                                                                                                        | Pin / differential                                                                                                                                                                                                                                                                                                              | File label                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| XChaCha20-Poly1305 | libsodium docs `crypto_aead_xchacha20poly1305_ietf_*` (IETF draft)                                                                                                   | Differential only: noble `xchacha20poly1305` encrypt → libsodium decrypt and vice versa, plus identical-ciphertext check. No network-fetched IETF vector; differential > pinned drift.                                                                                                                                          | `vectors.test.ts: XChaCha differential`        |
+| HKDF-SHA256        | **RFC 5869 §A.1 TC1** — IKM=0x0b*22, salt=000102..0c, info=f0..f9, L=42 → OKM=`3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865` | KAT pinned (hand-transcribed from RFC, verified: noble `hkdf(sha256,…)` and `node:crypto hkdfSync` both produce same hex and match RFC). Also random/empty cases differential.                                                                                                                                                  | `HKDF-SHA256 RFC 5869`                         |
+| HMAC-SHA256        | **RFC 4231 §4.2 TC1** — key=0x0b*20, data="Hi There" → `b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7`; TC2 key="Jefe" → `5bdcc146…`              | KAT pinned (verified: noble `hmac(sha256,…)` and `node:crypto createHmac` both match RFC). Random differential.                                                                                                                                                                                                                 | `HMAC-SHA256 RFC 4231`                         |
+| Argon2id           | `@node-rs/argon2` PHC `$argon2id$v=19$m=19456,t=2,p=1$`; intended cross-impl `→ libsodium crypto_pwhash_str_verify`                                                  | Cross-impl **attempted** but `libsodium-wrappers@0.8.4` does **not** expose `crypto_pwhash*` (verified `Object.keys(sodium)` — no pwhash entries, Emscripten build without pwhash). Documented in file header; fallback differential is `@node-rs/argon2` sync vs async + PHC parse/verify. Never fabricated a libsodium hash.  | `Argon2id cross-implementation` — note in file |
+| Shamir             | `shamir-secret-sharing@0.0.4` GF(2⁸) — no external KAT                                                                                                               | Round-trip only: 2-of-2, 2-of-3, 3-of-5 any-t-subset, share-length = secret+1, <t commitment fails, corrupt share fails.                                                                                                                                                                                                        | `Shamir vectors`                               |
+| Envelope tamper    | Wycheproof-style matrix over `tag / ct / wrappedCT / nonce / nonce-length / AAD (tenantId/switchId/kid/kekVersion) / key-length / version`                           | Adversarial: flip each byte class (0x01 and 0xff, first/middle/last, zeroed, truncated/overlong) → must throw generic `decrypt failed` (no oracle detail, no plaintext leak). Oracle-discipline test proves indistinguishability across 4 tamper classes (all messages contain `decrypt failed`, none contain `byte`/`offset`). | `adversarial: envelope Wycheproof-style`       |
+
+`vectors.test.ts` header documents every source and the Argon2/libsodium limitation explicitly. Strict TS (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`, no `as any` except `as const`/`satisfies`).
+
+## Coverage gate — CI-blocking
+
+`packages/crypto/vitest.config.ts`:
+
+```ts
+coverage: {
+  provider: 'v8',
+  include: ['src/**/*.ts'],
+  exclude: ['src/**/*.test.ts', 'dist/**'],
+  thresholds: { lines: 90, functions: 90, branches: 80, statements: 90 },
+  reporter: ['text','lcov','html'],
+  all: true,
+}
+```
+
+`@vitest/coverage-v8@5.0.1` pinned exact (matches `vitest@5.0.1`). `pnpm test:coverage` → `turbo run test:coverage` → `packages/crypto: vitest run --coverage`. Gate is **CI-blocking**: coverage below thresholds fails with `ERROR: Coverage for lines (…) does not meet global threshold (90%)` and non-zero exit (verified). Current `vitest run --coverage` on `packages/crypto`: **94.5% lines** (94.57 stmts, 91.5 branch, 100 func) — gate passes. Uncovered lines are defensive dead code (`envelope.ts:254-256` unreachable `equalBytes` pre-check, `envelope.ts:171` internal assert, `kdf.ts:52,74,79-83` pepper-secret error branches, `rotation.ts:48,108`, `sharing.ts:29,78`) — never hidden via `c8 ignore`, counted honestly, threshold still passes.
+
+Related `package.json` scripts: `packages/crypto#test:coverage` (`vitest run --coverage`), root `test:coverage` (`turbo run test:coverage`), `turbo.json` `test:coverage` task. Blocks T8.1 (failure-injection + Vault integration) and T12.1 (docs) per plan. `pnpm audit` 2026-09-20: 0 new advisory for `@vitest/coverage-v8@5.0.1` (pre-existing `turbo@2.5.4` GHSA-hcf7+GHSA-3qcw, `undici`/`tar-fs`/`esbuild` via testcontainers dev-only, not introduced). No implementation files changed — tests + vitest config only; no DB/API/UI code; no `git commit` (staged only); no sibling files except lockfile/PROGRESS/DECISIONS_LOG.
+
+## Verify (T2.5)
+
+- `pnpm --filter @heartbeat-vault/crypto exec vitest run --reporter=verbose` → 64 green (31 existing: envelope 9 + kdf 7 + rotation 5 + asymmetric 5 + sharing 5; 33 new vectors+tamer+coverage-fill).
+- `pnpm --filter @heartbeat-vault/crypto exec vitest run --coverage` → 94.5% lines gate passes (see above).
+- `pnpm test:coverage` (turbo) → same, green.
+- `pnpm --filter @heartbeat-vault/crypto exec tsc --noEmit` → clean (fixed readonly-cast for `wrappedDEK.ct`/`payload.nonce`, `noUncheckedIndexedAccess` `as number` casts, `?.` guards).
+- `pnpm --filter @heartbeat-vault/crypto build` → green.

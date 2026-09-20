@@ -7,14 +7,29 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"test: no tests yet\""
+    "test": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@testcontainers/postgresql": "10.14.0",
+    "@types/node": "22.13.10",
+    "@types/pg": "8.11.0",
     "eslint": "9.39.5",
     "eslint-config-prettier": "10.1.8",
     "globals": "16.5.0",
+    "testcontainers": "10.14.0",
     "typescript": "5.7.3",
-    "typescript-eslint": "8.70.0"
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.1"
+  },
+  "dependencies": {
+    "@fastify/cookie": "11.1.1",
+    "@fastify/helmet": "13.1.1",
+    "@heartbeat-vault/crypto": "workspace:*",
+    "@heartbeat-vault/db": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "fastify": "5.6.2",
+    "pg": "8.13.3",
+    "zod": "4.6.5"
   }
 }

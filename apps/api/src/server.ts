@@ -1,0 +1,41 @@
+import Fastify, { type FastifyInstance } from 'fastify';
+import helmet from '@fastify/helmet';
+import cookie from '@fastify/cookie';
+import type { Pool } from 'pg';
+import { registerSetupRoutes } from './routes/setup.js';
+
+export type BuildServerOptions = {
+  readonly pool: Pool;
+};
+
+export async function buildServer(pool: Pool): Promise<FastifyInstance>;
+export async function buildServer(options: BuildServerOptions): Promise<FastifyInstance>;
+export async function buildServer(
+  poolOrOptions: Pool | BuildServerOptions,
+): Promise<FastifyInstance> {
+  const pool: Pool =
+    poolOrOptions !== null &&
+    typeof poolOrOptions === 'object' &&
+    'pool' in (poolOrOptions as Record<string, unknown>)
+      ? (poolOrOptions as BuildServerOptions).pool
+      : (poolOrOptions as Pool);
+
+  const app = Fastify({
+    logger: false,
+    bodyLimit: 1 * 1024 * 1024,
+    trustProxy: true,
+  });
+
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+  });
+  await app.register(cookie);
+
+  app.get('/api/health', async (_request, reply) => {
+    return reply.status(200).send({ status: 'ok' });
+  });
+
+  await registerSetupRoutes(app, pool);
+
+  return app;
+}
