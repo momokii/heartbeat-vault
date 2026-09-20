@@ -63,6 +63,7 @@ export const switches = pgTable(
     releasePolicy: text('release_policy').notNull().default('fail_safe'),
     heartbeatStartedAt: timestamp('heartbeat_started_at', { withTimezone: true }),
     nextDeadline: timestamp('next_deadline', { withTimezone: true }),
+    heartbeatTokenHash: text('heartbeat_token_hash'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .default(sql`clock_timestamp()`),
@@ -303,6 +304,19 @@ export const webauthnCredentials = pgTable('webauthn_credentials', {
   transports: text('transports'),
   deviceType: text('device_type'),
   backedUp: boolean('backed_up').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .default(sql`clock_timestamp()`),
+});
+
+export const heartbeatLinks = pgTable('heartbeat_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  switchId: uuid('switch_id')
+    .notNull()
+    .references(() => switches.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .default(sql`clock_timestamp()`),
