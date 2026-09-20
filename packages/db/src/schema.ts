@@ -64,6 +64,9 @@ export const switches = pgTable(
     heartbeatStartedAt: timestamp('heartbeat_started_at', { withTimezone: true }),
     nextDeadline: timestamp('next_deadline', { withTimezone: true }),
     heartbeatTokenHash: text('heartbeat_token_hash'),
+    triggerType: text('trigger_type').notNull().default('heartbeat'),
+    fireAt: timestamp('fire_at', { withTimezone: true }),
+    quorumThreshold: integer('quorum_threshold'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .default(sql`clock_timestamp()`),
@@ -75,6 +78,14 @@ export const switches = pgTable(
     check('switches_mode_check', sql`${t.mode} IN ('asymmetric_key','direct_delivery')`),
     check('switches_status_check', sql`${t.status} IN ('active','paused','released')`),
     check('switches_release_policy_check', sql`${t.releasePolicy} IN ('fail_safe','fail_deadly')`),
+    check(
+      'switches_trigger_type_check',
+      sql`${t.triggerType} IN ('heartbeat','fixed_date','panic','quorum')`,
+    ),
+    check(
+      'switches_quorum_threshold_check',
+      sql`${t.quorumThreshold} IS NULL OR (${t.quorumThreshold} >= 2 AND ${t.quorumThreshold} <= 255)`,
+    ),
   ],
 );
 
@@ -91,11 +102,15 @@ export const recipients = pgTable(
     status: text('status').notNull().default('invited'),
     inviteTokenHash: text('invite_token_hash'),
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    vote: text('vote'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .default(sql`clock_timestamp()`),
   },
-  t => [check('recipients_status_check', sql`${t.status} IN ('invited','accepted')`)],
+  t => [
+    check('recipients_status_check', sql`${t.status} IN ('invited','accepted')`),
+    check('recipients_vote_check', sql`${t.vote} IS NULL OR ${t.vote} IN ('reachable','deceased')`),
+  ],
 );
 
 // ── sealed_payloads ──────────────────────────────────────────────────────
@@ -155,7 +170,7 @@ export const triggerJobs = pgTable(
     unique('trigger_jobs_switch_deadline_unique').on(t.switchId, t.deadlineAt),
     check(
       'trigger_jobs_state_check',
-      sql`${t.state} IN ('pending','running','succeeded','failed','dead')`,
+      sql`${t.state} IN ('pending','running','succeeded','failed','dead','cancelled')`,
     ),
   ],
 );
@@ -194,7 +209,7 @@ export const deliveryJobs = pgTable(
   t => [
     check(
       'delivery_jobs_state_check',
-      sql`${t.state} IN ('pending','running','succeeded','failed','dead')`,
+      sql`${t.state} IN ('pending','running','succeeded','failed','dead','cancelled')`,
     ),
   ],
 );

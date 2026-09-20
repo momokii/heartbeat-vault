@@ -37,14 +37,24 @@ export type TriggerJobRow = {
 export async function materializeDueTriggers(pool: Pool, now: Date): Promise<number> {
   const res = await pool.query<{ id: number }>(
     `INSERT INTO trigger_jobs (switch_id, deadline_at, run_at, state, idempotency_key, payload)
-     SELECT s.id, s.next_deadline,
-            s.next_deadline
-              + (extract(epoch FROM s.heartbeat_interval) * 0.5 + $2::bigint) * interval '1 second',
+     SELECT s.id,
+            CASE WHEN s.trigger_type = 'heartbeat' THEN s.next_deadline ELSE s.fire_at END,
+            CASE WHEN s.trigger_type = 'heartbeat'
+                 THEN s.next_deadline
+                      + (extract(epoch FROM s.heartbeat_interval) * 0.5 + $2::bigint) * interval '1 second'
+                 ELSE s.fire_at END,
             'pending',
-            'switch:' || s.id::text || ':' || extract(epoch FROM s.next_deadline)::bigint,
-            '{"kind":"fire"}'::jsonb
+            'switch:' || s.id::text || ':' || extract(epoch FROM CASE
+              WHEN s.trigger_type = 'heartbeat' THEN s.next_deadline ELSE s.fire_at END)::bigint,
+            CASE WHEN s.trigger_type = 'heartbeat'
+                 THEN '{"kind":"fire"}'::jsonb
+                 ELSE '{"kind":"fire","variant":true}'::jsonb END
      FROM switches s
-     WHERE s.status = 'active' AND s.next_deadline <= $1
+     WHERE s.status = 'active'
+       AND (
+         (s.trigger_type = 'heartbeat' AND s.next_deadline <= $1)
+         OR (s.trigger_type IN ('fixed_date','panic') AND s.fire_at IS NOT NULL AND s.fire_at <= $1)
+       )
        AND NOT EXISTS (SELECT 1 FROM vault_waits w WHERE w.switch_id = s.id)
      ON CONFLICT DO NOTHING
      RETURNING id`,
@@ -191,7 +201,7 @@ export async function processJob(pool: Pool, job: TriggerJobRow, workerId: strin
       await client.query(
         `INSERT INTO delivery_jobs (switch_id, trigger_job_id, channel, state, available_at,
             idempotency_key, payload)
-         VALUES ($1,$2,$3,'pending', clock_timestamp(), $4, $5)
+         VALUES ($1,$2,$3,'pending', clock_timestamp() + interval '48 hours', $4, $5)
          ON CONFLICT (idempotency_key) DO NOTHING`,
         [
           row.id,
