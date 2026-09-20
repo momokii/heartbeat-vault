@@ -45,9 +45,8 @@
 		respond "ok" 200
 	}
 
-	# Reverse proxy to the API service (placeholder until Phase 3+).
-	# `api:3000` resolves via Docker's embedded DNS on the `app_net` network.
-	handle {
+	# API routes resolve through Docker's embedded DNS on the `app_net` network.
+	handle /api {
 		reverse_proxy api:3000 {
 			# Timeouts — fail fast, let client retry.
 			header_up Host {host}
@@ -55,6 +54,23 @@
 			header_up X-Forwarded-For {remote}
 			header_up X-Forwarded-Proto {scheme}
 		}
+	}
+
+	handle /api/* {
+		reverse_proxy api:3000 {
+			# Timeouts — fail fast, let client retry.
+			header_up Host {host}
+			header_up X-Real-IP {remote}
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# Serve the Vite build and return the SPA entry point for BrowserRouter routes.
+	handle {
+		root * /usr/share/caddy
+		try_files {path} /index.html
+		file_server
 	}
 
 	# Structured access log (JSON) — consumed by host log driver.
