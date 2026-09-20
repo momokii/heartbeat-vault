@@ -22,7 +22,7 @@ export function Header() {
             >
               HV
             </span>
-            <span className="text-[15px]">Heartbeat Vault</span>
+            <span className="sr-only text-[15px] sm:not-sr-only">Heartbeat Vault</span>
           </NavLink>
           <nav aria-label="Primary" className="hidden sm:flex items-center gap-1">
             {NAV_ITEMS.map(item => (
