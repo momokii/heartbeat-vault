@@ -29,14 +29,17 @@ Port values may differ from the defaults in `.env`.
 
 ## Tailnet / bind-IP operation
 
-To reach the app from other devices on the same Tailnet, set a single host IP in `.env`:
+Default installs are loopback-only (`CADDY_BIND_IP=127.0.0.1` in `.env.example`). To reach the app from other devices on the same Tailnet, run the opt-in helper — it validates the IP, updates `.env`, and restarts the stack:
 
 ```bash
-CADDY_BIND_IP=100.124.184.116
-HTTP_PORT=80
-HTTPS_PORT=443
-APP_URL=http://100.124.184.116
-./install.sh upgrade
+scripts/enable-tailnet.sh 100.124.184.116
+# equivalent manual form:
+# CADDY_BIND_IP=100.124.184.116
+# HTTP_PORT=80
+# HTTPS_PORT=443
+# APP_URL=http://100.124.184.116
+# ./install.sh upgrade
+scripts/enable-tailnet.sh --revert   # back to 127.0.0.1:18080/18443
 ```
 
 Verify the binding:

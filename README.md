@@ -53,7 +53,7 @@ Check the stack at any time:
 ./install.sh status
 ```
 
-The default LAN profile exposes Caddy at loopback ports `18080` and `18443`; values can be changed in `.env`. Setting `CADDY_BIND_IP` to a single host IP (for example a Tailnet address such as `100.124.184.116` with `HTTP_PORT=80`/`HTTPS_PORT=443` for `http://100.124.184.116/`) publishes Caddy's `80`/`443` only on that address — dev override ports stay on `127.0.0.1`, and the verifier only permits that exact Caddy mapping. The default certificate uses Caddy's internal CA, so a browser may require a one-time trust step on a LAN.
+The default LAN profile exposes Caddy at loopback ports `18080` and `18443`; values can be changed in `.env`. The default is loopback-only (`CADDY_BIND_IP=127.0.0.1`). When Tailnet reachability is needed, run the opt-in helper `scripts/enable-tailnet.sh 100.124.184.116` (or any single host IP with `HTTP_PORT=80`/`HTTPS_PORT=443` for `http://<ip>/`) — it publishes only Caddy's `80`/`443` on that address, dev override ports stay on `127.0.0.1`, and the verifier only permits that exact Caddy mapping. The default certificate uses Caddy's internal CA, so a browser may require a one-time trust step on a LAN.
 
 ## First switch guide
 
