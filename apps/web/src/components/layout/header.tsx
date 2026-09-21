@@ -22,6 +22,7 @@ const PUBLIC_NAVIGATION: readonly NavigationItem[] = [
   { to: '/', label: 'Home' },
   { to: '/login', label: 'Login' },
   { to: '/setup', label: 'Setup' },
+  { to: '/invite/accept', label: 'Accept invite' },
 ] as const;
 const AUTHENTICATED_NAVIGATION: readonly NavigationItem[] = [
   { to: '/', label: 'Home' },

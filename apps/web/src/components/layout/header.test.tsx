@@ -50,6 +50,7 @@ describe('Header', () => {
     await screen.findAllByRole('link', { name: 'Login' });
     expect(screen.getAllByRole('link', { name: 'Home' })).not.toHaveLength(0);
     expect(screen.getAllByRole('link', { name: 'Setup' })).not.toHaveLength(0);
+    expect(screen.getAllByRole('link', { name: 'Accept invite' })).not.toHaveLength(0);
     expect(screen.queryAllByRole('link', { name: 'Admin' })).toHaveLength(0);
     expect(screen.queryAllByRole('link', { name: 'Account' })).toHaveLength(0);
     expect(screen.queryAllByRole('button', { name: 'Logout' })).toHaveLength(0);
