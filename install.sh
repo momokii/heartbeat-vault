@@ -257,6 +257,10 @@ load_db_config() {
   PG_DB=${d:-heartbeat_vault}
 }
 
+db_psql() {
+  docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" "$@"
+}
+
 cmd_install() {
   preflight
   apply_tls
