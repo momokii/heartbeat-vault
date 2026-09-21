@@ -1,7 +1,11 @@
+import { useState, type FormEvent } from 'react';
+import { Navigate } from 'react-router-dom';
+import { z } from 'zod';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useAuth } from '@/lib/auth';
 import { apiClient, ApiError } from '@/lib/api-client';
 
 const LoginResponseSchema = z.union([
@@ -16,6 +20,7 @@ type LoginState =
   | { readonly kind: 'step-up' };
 
 export function LoginPage() {
+  const auth = useAuth();
   const [state, setState] = useState<LoginState>({ kind: 'idle' });
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -48,6 +53,10 @@ export function LoginPage() {
             : 'Email or password is incorrect.',
       });
     }
+  }
+  if (auth.kind === 'authenticated') return <Navigate to="/" replace />;
+  if (auth.kind === 'loading') {
+    return <p className="text-sm text-[var(--color-muted-foreground)]">Checking your session…</p>;
   }
   if (state.kind === 'step-up')
     return (
@@ -111,5 +120,3 @@ export function LoginPage() {
     </div>
   );
 }
-import { useState, type FormEvent } from 'react';
-import { z } from 'zod';

@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth';
 
 const SetupResponseSchema = z.object({
   id: z.string(),
@@ -32,6 +34,7 @@ type SetupState =
   | { readonly kind: 'complete'; readonly email: string };
 
 export function SetupPage() {
+  const auth = useAuth();
   const [state, setState] = useState<SetupState>({ kind: 'checking' });
 
   useEffect(() => {
@@ -54,6 +57,8 @@ export function SetupPage() {
       cancelled = true;
     };
   }, []);
+
+  if (auth.kind === 'authenticated') return <Navigate to="/" replace />;
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();

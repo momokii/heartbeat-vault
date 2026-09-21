@@ -86,10 +86,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
     let response: Response;
     try {
-      const init: RequestInit = { method, headers, signal };
-      if (opts.body !== undefined) {
-        (init as { body: string }).body = JSON.stringify(opts.body);
-      }
+      const init: RequestInit =
+        opts.body === undefined
+          ? { method, headers, signal, credentials: 'include' }
+          : { method, headers, signal, credentials: 'include', body: JSON.stringify(opts.body) };
       response = await fetch(url, init);
     } catch (err: unknown) {
       clearTimeout(timeoutId);
