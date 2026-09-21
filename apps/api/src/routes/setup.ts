@@ -31,6 +31,33 @@ export async function registerSetupRoutes(app: FastifyInstance, pool: Pool): Pro
       return reply.status(400).send({ error: 'invalid_request' });
     }
 
+    // Empty-body probe used by the web setup page and the security verifier:
+    // report 410 when bootstrap is closed before requiring token/email/password.
+    const probeClient = await pool.connect();
+    try {
+      const probeRes = await probeClient.query<{ key: string; value: string }>(
+        `SELECT key, value FROM app_config WHERE key IN ('setup_completed','setup_token_hash','setup_token_expires_at')`,
+      );
+      const probeMap = new Map<string, string>();
+      for (const row of probeRes.rows) probeMap.set(row.key, row.value);
+      if (probeMap.get('setup_completed') === 'true') {
+        return reply.status(410).send({ error: 'gone' });
+      }
+      const probeHash = probeMap.get('setup_token_hash') ?? '';
+      if (!probeHash) {
+        return reply.status(410).send({ error: 'gone' });
+      }
+      const probeExpires = probeMap.get('setup_token_expires_at');
+      if (probeExpires) {
+        const probeExp = new Date(probeExpires);
+        if (!Number.isNaN(probeExp.getTime()) && probeExp.getTime() <= Date.now()) {
+          return reply.status(410).send({ error: 'gone' });
+        }
+      }
+    } finally {
+      probeClient.release();
+    }
+
     const parsed = setupBodySchema.safeParse(body);
     if (!parsed.success) {
       return reply.status(400).send({ error: 'invalid_request' });
