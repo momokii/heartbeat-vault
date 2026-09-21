@@ -46,6 +46,12 @@ env_value() {
   grep -E "^${1}=" .env 2>/dev/null | tail -n 1 | cut -d= -f2- | tr -d '\r'
 }
 
+caddy_bind_ip() {
+  local v
+  v=$(env_value CADDY_BIND_IP || true)
+  printf '%s' "${v:-127.0.0.1}"
+}
+
 compose() {
   if [ "$PROD" = 1 ]; then
     docker compose -f docker-compose.yml -f docker-compose.prod.yml "$@"
@@ -173,12 +179,18 @@ apply_tls() {
 
 # ── Health wait ──────────────────────────────────────────────────────────────
 wait_healthy() {
-  local https_port http_port base="" attempt=0
+  local https_port http_port bind_ip bases base="" attempt=0
   https_port=$(env_value HTTPS_PORT || true)
   http_port=$(env_value HTTP_PORT || true)
-  for base in \
-    "https://127.0.0.1:${https_port:-18443}" \
-    "http://127.0.0.1:${http_port:-18080}"; do
+  bind_ip=$(caddy_bind_ip)
+  bases="https://127.0.0.1:${https_port:-18443}
+http://127.0.0.1:${http_port:-18080}"
+  if [ "$bind_ip" != "127.0.0.1" ]; then
+    bases="https://${bind_ip}:${https_port:-18443}
+http://${bind_ip}:${http_port:-18080}
+${bases}"
+  fi
+  for base in $bases; do
     if curl -sk --max-time 3 "${base}/api/health" 2>/dev/null | grep -q 'ok'; then
       log "API is healthy at ${base}."
       printf '%s' "$base" > /tmp/.hv-api-base
@@ -187,9 +199,7 @@ wait_healthy() {
   done
   log "Waiting for the API to become healthy (up to 120s)..."
   while [ "$attempt" -lt 60 ]; do
-    for base in \
-      "https://127.0.0.1:${https_port:-18443}" \
-      "http://127.0.0.1:${http_port:-18080}"; do
+    for base in $bases; do
       if curl -sk --max-time 3 "${base}/api/health" 2>/dev/null | grep -q 'ok'; then
         log "API is healthy at ${base}."
         printf '%s' "$base" > /tmp/.hv-api-base
@@ -266,10 +276,15 @@ cmd_install() {
 
 cmd_status() {
   compose ps
-  local https_port http_port base
+  local https_port http_port bind_ip bases base
   https_port=$(env_value HTTPS_PORT || true)
   http_port=$(env_value HTTP_PORT || true)
-  for base in "https://127.0.0.1:${https_port:-18443}" "http://127.0.0.1:${http_port:-18080}"; do
+  bind_ip=$(caddy_bind_ip)
+  bases="https://127.0.0.1:${https_port:-18443} http://127.0.0.1:${http_port:-18080}"
+  if [ "$bind_ip" != "127.0.0.1" ]; then
+    bases="https://${bind_ip}:${https_port:-18443} http://${bind_ip}:${http_port:-18080} ${bases}"
+  fi
+  for base in $bases; do
     if curl -sk --max-time 3 "${base}/api/health" 2>/dev/null | grep -q 'ok'; then
       log "API health: OK (${base}/api/health)"
       return 0
