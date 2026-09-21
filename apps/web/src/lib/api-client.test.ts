@@ -24,7 +24,11 @@ describe('createApiClient', () => {
     ).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledWith(
       'https://vault.test/api/switches',
-      expect.objectContaining({ method: 'POST', body: JSON.stringify({ title: 'Plan' }) }),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ title: 'Plan' }),
+        credentials: 'include',
+      }),
     );
   });
 

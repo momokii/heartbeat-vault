@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -24,45 +24,51 @@ type PageState =
   | { readonly kind: 'forbidden' }
   | { readonly kind: 'error' }
   | { readonly kind: 'ready'; readonly users: readonly z.infer<typeof userSchema>[] };
+type InviteResult =
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'success'; readonly token: string }
+  | { readonly kind: 'error'; readonly message: string };
 
 export function AdminPage() {
   const [state, setState] = useState<PageState>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [inviteResult, setInviteResult] = useState<InviteResult>({ kind: 'idle' });
+  const loadUsers = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    try {
+      const users = await apiClient.request({
+        path: '/users',
+        schema: usersSchema,
+        signal,
+      });
+      setState({ kind: 'ready', users });
+    } catch (error) {
+      if (!signal?.aborted)
+        setState(
+          error instanceof ApiError && (error.status === 401 || error.status === 403)
+            ? { kind: 'forbidden' }
+            : { kind: 'error' },
+        );
+    }
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
-    async function load(): Promise<void> {
-      try {
-        const users = await apiClient.request({
-          path: '/users',
-          schema: usersSchema,
-          signal: controller.signal,
-        });
-        setState({ kind: 'ready', users });
-      } catch (error) {
-        if (!controller.signal.aborted)
-          setState(
-            error instanceof ApiError && (error.status === 401 || error.status === 403)
-              ? { kind: 'forbidden' }
-              : { kind: 'error' },
-          );
-      }
-    }
-    void load();
+    void loadUsers(controller.signal);
     return () => controller.abort();
-  }, []);
+  }, [loadUsers]);
   async function createInvite(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const parsed = inviteFormSchema.safeParse({ email: form.get('email'), role: form.get('role') });
     if (!parsed.success) {
-      setMessage(parsed.error.issues[0]?.message ?? 'Check the invitation details.');
+      setInviteResult({
+        kind: 'error',
+        message: parsed.error.issues[0]?.message ?? 'Check the invitation details.',
+      });
       return;
     }
     setBusy(true);
-    setMessage(null);
-    setToken(null);
+    setInviteResult({ kind: 'idle' });
     try {
       const result = await apiClient.request({
         method: 'POST',
@@ -70,11 +76,14 @@ export function AdminPage() {
         body: parsed.data,
         schema: inviteSchema,
       });
-      setToken(result.token);
-      setMessage('Invitation created. Copy the token before leaving this page.');
-      event.currentTarget.reset();
+      setInviteResult({ kind: 'success', token: result.token });
+      formElement.reset();
+      void loadUsers();
     } catch {
-      setMessage('The invitation could not be created. Try again.');
+      setInviteResult({
+        kind: 'error',
+        message: 'The invitation could not be created. Try again.',
+      });
     } finally {
       setBusy(false);
     }
@@ -136,14 +145,19 @@ export function AdminPage() {
                 <option value="admin">Administrator</option>
               </select>
             </div>
-            {message ? (
+            {inviteResult.kind === 'success' ? (
               <p role="status" className="text-sm text-[var(--color-muted-foreground)]">
-                {message}
+                Invitation created. Copy the token before leaving this page.
               </p>
             ) : null}
-            {token ? (
-              <p role="alert" className="break-all rounded-md border p-3 font-mono text-xs">
-                Invitation token — copy and share securely now: {token}
+            {inviteResult.kind === 'success' ? (
+              <p className="break-all rounded-md border p-3 font-mono text-xs">
+                Invitation token — copy and share securely now: {inviteResult.token}
+              </p>
+            ) : null}
+            {inviteResult.kind === 'error' ? (
+              <p role="alert" className="text-sm text-[var(--color-muted-foreground)]">
+                {inviteResult.message}
               </p>
             ) : null}
             <Button type="submit" disabled={busy}>
