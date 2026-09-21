@@ -8,6 +8,7 @@ import { SwitchDetailPage } from '@/routes/switch-detail';
 import { AdminPage } from '@/routes/admin';
 import { TotpChallengePage } from '@/routes/totp-challenge';
 import { AccountPage } from '@/routes/account';
+import { InviteAcceptPage } from '@/routes/invite-accept';
 import { NotFoundPage } from '@/routes/not-found';
 
 const router = createBrowserRouter([
@@ -21,6 +22,7 @@ const router = createBrowserRouter([
       { path: '/switches/:id', element: <SwitchDetailPage /> },
       { path: '/admin', element: <AdminPage /> },
       { path: '/account', element: <AccountPage /> },
+      { path: '/invite/accept', element: <InviteAcceptPage /> },
       { path: '/2fa/totp', element: <TotpChallengePage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

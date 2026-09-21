@@ -151,9 +151,20 @@ export function AdminPage() {
               </p>
             ) : null}
             {inviteResult.kind === 'success' ? (
-              <p className="break-all rounded-md border p-3 font-mono text-xs">
-                Invitation token — copy and share securely now: {inviteResult.token}
-              </p>
+              <div className="space-y-2 rounded-md border p-3">
+                <p className="break-all font-mono text-xs">
+                  Invitation token — copy and share securely now: {inviteResult.token}
+                </p>
+                <p className="break-all text-xs text-[var(--color-muted-foreground)]">
+                  Accept link: {window.location.origin}/invite/accept?token={inviteResult.token}
+                </p>
+                <Link
+                  to={`/invite/accept?token=${encodeURIComponent(inviteResult.token)}`}
+                  className="text-xs font-medium underline underline-offset-4"
+                >
+                  Open the accept-invitation page
+                </Link>
+              </div>
             ) : null}
             {inviteResult.kind === 'error' ? (
               <p role="alert" className="text-sm text-[var(--color-muted-foreground)]">
