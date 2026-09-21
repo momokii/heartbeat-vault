@@ -79,10 +79,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
       : controller.signal;
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       ...defaultHeaders,
       ...(opts.headers ?? {}),
     };
+    if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
 
     let response: Response;
     try {

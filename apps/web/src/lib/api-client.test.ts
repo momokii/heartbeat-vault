@@ -32,6 +32,22 @@ describe('createApiClient', () => {
     );
   });
 
+  it('omits content-type on bodyless requests so empty POSTs reach auth handlers', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const client = createApiClient({ baseUrl: 'https://vault.test/api' });
+    await expect(
+      client.request({ method: 'POST', path: '/logout', schema: responseSchema }),
+    ).resolves.toEqual({ ok: true });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe('POST');
+    expect(init.credentials).toBe('include');
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+  });
+
   it('returns a typed HTTP error without exposing the response body', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('', { status: 401, statusText: 'Unauthorized' }),
