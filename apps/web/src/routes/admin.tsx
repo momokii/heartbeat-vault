@@ -123,7 +123,8 @@ export function AdminPage() {
         <CardHeader>
           <CardTitle>Invite a user</CardTitle>
           <CardDescription>
-            Invitation tokens are returned once and expire after 24 hours.
+            Invitation tokens are returned once and expire after 24 hours. The new user can open
+            /invite/accept to confirm their new account.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -147,7 +148,8 @@ export function AdminPage() {
             </div>
             {inviteResult.kind === 'success' ? (
               <p role="status" className="text-sm text-[var(--color-muted-foreground)]">
-                Invitation created. Copy the token before leaving this page.
+                Invitation created. Copy the token before leaving this page. The new user can open
+                /invite/accept to confirm their new account.
               </p>
             ) : null}
             {inviteResult.kind === 'success' ? (
