@@ -92,9 +92,15 @@ fi
 API_BASE=''
 HTTPS_PORT=$(env_value HTTPS_PORT || true)
 HTTP_PORT=$(env_value HTTP_PORT || true)
+CADDY_BIND_IP_RAW=$(env_value CADDY_BIND_IP || true)
+CADDY_BIND_IP=${CADDY_BIND_IP_RAW:-127.0.0.1}
 for api_candidate in \
   "https://127.0.0.1:${HTTPS_PORT:-18443}" \
-  "http://127.0.0.1:${HTTP_PORT:-18080}"; do
+  "http://127.0.0.1:${HTTP_PORT:-18080}" \
+  "https://${CADDY_BIND_IP}:${HTTPS_PORT:-18443}" \
+  "http://${CADDY_BIND_IP}:${HTTP_PORT:-18080}"; do
+  [ "$api_candidate" = "https://${CADDY_BIND_IP}:${HTTPS_PORT:-18443}" ] && [ "$CADDY_BIND_IP" = "127.0.0.1" ] && continue
+  [ "$api_candidate" = "http://${CADDY_BIND_IP}:${HTTP_PORT:-18080}" ] && [ "$CADDY_BIND_IP" = "127.0.0.1" ] && continue
   if curl -sk --max-time 3 "${api_candidate}/api/health" 2>/dev/null | grep -q 'ok'; then
     API_BASE="$api_candidate"
     break
@@ -159,18 +165,94 @@ else
     "No db ports in base or prod compose; Postgres is internal-only (app_net)."
 fi
 
-# ── 3. Published host ports bind loopback (dev contract) ─────────────────────
-_nonloopback_ports=''
+# ── 3a. Caddy bind IP is loopback or a single host IP (never wildcard/CIDR) ───
+_caddy_bind_ip_status=''
+_caddy_bind_ip_detail=''
+case "$CADDY_BIND_IP" in
+  '0.0.0.0' | '::' | '*')
+    add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" FAIL \
+      "CADDY_BIND_IP=$CADDY_BIND_IP is a wildcard bind — must be 127.0.0.1 or a single host IP (e.g. Tailnet 100.x.y.z)."
+    ;;
+  *'/'*)
+    add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" FAIL \
+      "CADDY_BIND_IP=$CADDY_BIND_IP contains '/' (CIDR) — must be a single IP, never a network."
+    ;;
+  *'${'* | *'$'*)
+    add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" FAIL \
+      "CADDY_BIND_IP contains unresolved variable syntax — set it to 127.0.0.1 or a literal IP."
+    ;;
+  *)
+    if [ -z "$CADDY_BIND_IP_RAW" ] || [ "$CADDY_BIND_IP" = "127.0.0.1" ]; then
+      add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" PASS \
+        "CADDY_BIND_IP is loopback default (127.0.0.1)."
+    elif printf '%s' "$CADDY_BIND_IP" | grep -Eq '^((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])$'; then
+      add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" PASS \
+        "CADDY_BIND_IP=$CADDY_BIND_IP is a valid IPv4 host IP."
+    elif printf '%s' "$CADDY_BIND_IP" | grep -Eq '^[0-9A-Fa-f:.]+:[0-9A-Fa-f:.]*$'; then
+      add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" PASS \
+        "CADDY_BIND_IP=$CADDY_BIND_IP is a valid IPv6 host IP."
+    elif printf '%s' "$CADDY_BIND_IP" | grep -Eq '^[0-9A-Za-z.-]+$'; then
+      add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" WARN \
+        "CADDY_BIND_IP=$CADDY_BIND_IP looks like a hostname — Docker publish requires a literal IP; this will fail at compose up."
+    else
+      add_result caddy-bind-ip "Caddy bind IP is loopback or a single host IP" FAIL \
+        "CADDY_BIND_IP=$CADDY_BIND_IP is not a valid loopback or single host IP."
+    fi
+    ;;
+esac
+
+# ── 3b. Published host ports restricted (loopback or configured bind IP) ─────
+# Service-scoped parser: only caddy 80/443 may use the configured CADDY_BIND_IP.
+_ports_violation=''
 if [ -f docker-compose.yml ]; then
-  _nonloopback_ports=$(grep -E '^[[:space:]]*-["[:space:]]+[0-9.]+:' docker-compose.yml 2>/dev/null |
-    grep -v '127.0.0.1:' || true)
+  _ports_violation=$(awk -v bind_ip="$CADDY_BIND_IP" -v bind_raw="$CADDY_BIND_IP_RAW" '
+    function is_loopback(h) { return h == "127.0.0.1" || h == "[::1]" }
+    /^[[:space:]]*#/ {next}
+    /^services:[[:space:]]*$/ {in_s=1; next}
+    /^[^[:space:]#][^:]*:[[:space:]]*$/ {in_s=0}
+    in_s && /^[[:space:]][[:space:]]([A-Za-z0-9_-]+):[[:space:]]*$/ { svc=substr($1,1); sub(/:.*/, "", svc); curr=svc; next }
+    in_s && /^[[:space:]]+ports:/ {in_ports=1; next}
+    in_ports && /^[[:space:]]+[^[:space:]-]/ {in_ports=0}
+    in_ports && /^[[:space:]]*-[[:space:]]*"/ {
+      line=$0
+      gsub(/^[[:space:]]*-[[:space:]]*"/, "", line); gsub(/".*$/, "", line); gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      # Template caddy bind must be handled before ":" split because "${CADDY_BIND_IP:-127.0.0.1}" contains ":"
+      if (line ~ /^\$\{CADDY_BIND_IP/) {
+        # extract container port after last ":"
+        n2=split(line, tp, ":"); cport=tp[n2]; split(cport, cp, "/"); cport_num=cp[1]
+        if (bind_ip == "127.0.0.1" && line == "${CADDY_BIND_IP}:${HTTP_PORT:-18080}:80") { print "FAIL:bare ${CADDY_BIND_IP} with empty value in service " curr; exit }
+        if (bind_ip == "127.0.0.1") { print "FAIL:non-loopback template with loopback bind_ip in service " curr " line " line; exit }
+        if (curr != "caddy") { print "FAIL:non-loopback bind only allowed for caddy, found in " curr " line " line; exit }
+        if (cport_num != "80" && cport_num != "443") { print "FAIL:non-loopback bind only for 80/443, found " cport_num " in " curr; exit }
+        next
+      }
+      n=split(line, parts, ":")
+      host=""; cport=""
+      if (n==2) { host=""; cport=parts[2] } else if (n==3) { host=parts[1]; cport=parts[3] } else { host=parts[1]; cport=parts[n] }
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", host); gsub(/^[[:space:]]+|[[:space:]]+$/, "", cport)
+      split(cport, cp, "/"); cport_num=cp[1]
+      if (host == "" || host == "0.0.0.0" || host == "::" || host == "[::]") { print "FAIL:wildcard publish " line " in service " curr; exit }
+      if (host == "127.0.0.1" || host == "[::1]") next
+      if (host == bind_ip) {
+        if (curr != "caddy") { print "FAIL:non-loopback bind only allowed for caddy, found in " curr " line " line; exit }
+        if (cport_num != "80" && cport_num != "443") { print "FAIL:non-loopback bind only for 80/443, found " cport_num " in " curr; exit }
+        next
+      }
+      print "FAIL:unexpected host bind " host " in service " curr " line " line; exit
+    }
+  ' docker-compose.yml 2>/dev/null || true)
 fi
-if [ -z "$_nonloopback_ports" ]; then
-  add_result ports-loopback "Published ports bound to loopback" PASS \
-    "Base compose publishes caddy on 127.0.0.1 only; api and db publish nothing."
+if [ -z "$_ports_violation" ]; then
+  if [ "$CADDY_BIND_IP" = "127.0.0.1" ]; then
+    add_result ports-loopback "Published ports restricted (loopback or configured bind IP)" PASS \
+      "Base compose publishes only on 127.0.0.1 (CADDY_BIND_IP loopback default)."
+  else
+    add_result ports-loopback "Published ports restricted (loopback or configured bind IP)" PASS \
+      "Base compose publishes loopback + exact caddy mapping ${CADDY_BIND_IP}:${HTTP_PORT:-18080}:80 / ${CADDY_BIND_IP}:${HTTPS_PORT:-18443}:443."
+  fi
 else
-  add_result ports-loopback "Published ports bound to loopback" WARN \
-    "Non-loopback host bindings found in base compose: ${_nonloopback_ports}. Confirm each is intentionally public."
+  add_result ports-loopback "Published ports restricted (loopback or configured bind IP)" FAIL \
+    "Published ports violation: ${_ports_violation}. Only 127.0.0.1 and the exact caddy 80/443 mapping for CADDY_BIND_IP are allowed."
 fi
 
 # ── 4. Dev override (when present) binds loopback only ───────────────────────
@@ -202,6 +284,30 @@ if [ -z "$_admin_published" ]; then
 else
   add_result caddy-admin-private "Caddy admin API not published" FAIL \
     "Caddy admin (2019) published off-loopback: ${_admin_published}"
+fi
+
+# ── 5b. Runtime port bindings (WARN-only, docker required) ────────────────────
+if [ "$DOCKER_OK" = 1 ] && docker compose ps --services --filter status=running 2>/dev/null | grep -qx caddy; then
+  _rt80=$(docker compose port caddy 80 2>/dev/null | head -n 1 || true)
+  _rt443=$(docker compose port caddy 443 2>/dev/null | head -n 1 || true)
+  _rt_violation=''
+  for _rt in "$_rt80" "$_rt443"; do
+    [ -z "$_rt" ] && continue
+    _rt_host=$(printf '%s' "$_rt" | cut -d: -f1)
+    if [ "$_rt_host" != "127.0.0.1" ] && [ "$_rt_host" != "$CADDY_BIND_IP" ]; then
+      _rt_violation="$_rt_violation $_rt"
+    fi
+  done
+  if [ -z "$_rt_violation" ]; then
+    add_result ports-runtime "Runtime port bindings (caddy 80/443)" PASS \
+      "Running caddy ports match expected bind (127.0.0.1 or \$CADDY_BIND_IP=$CADDY_BIND_IP)."
+  else
+    add_result ports-runtime "Runtime port bindings (caddy 80/443)" WARN \
+      "Runtime caddy ports bound to unexpected host:$_rt_violation (expected 127.0.0.1 or $CADDY_BIND_IP)."
+  fi
+else
+  add_result ports-runtime "Runtime port bindings (caddy 80/443)" WARN \
+    "Caddy not running or docker unavailable — runtime port check skipped."
 fi
 
 # ── 6. API container runs as non-root ────────────────────────────────────────
