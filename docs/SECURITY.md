@@ -29,7 +29,7 @@ A switch requires an encrypted payload and an accepted recipient before it can a
 ## Transport, host, and supply-chain controls
 
 - Caddy terminates TLS and sets HSTS, CSP, frame, content-type, referrer, and permissions-policy headers.
-- The database is private to the Compose network. The base profile publishes only Caddy ports and binds them to `127.0.0.1`.
+- The database is private to the Compose network. The base profile publishes only Caddy ports, bound to `127.0.0.1` by default; `CADDY_BIND_IP` may bind them to exactly one configured host IP (commonly a Tailnet address). The verifier FAILs any other non-loopback publication, wildcard binds (`0.0.0.0`/`::`), and any non-loopback API/DB/admin exposure.
 - API containers run non-root; production overrides provide restart policies and resource limits.
 - Compose images and Dockerfile base images are digest-pinned. CI runs dependency audit, gitleaks, CodeQL, and release scanning. Release workflow artifacts include an SPDX SBOM and keyless cosign signing when executed on GitHub.
 - Application and migrator database roles are designed for scoped privileges; the verification script checks that they are not superusers in a running stack.

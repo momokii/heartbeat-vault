@@ -131,6 +131,14 @@
 - [x] Final local evidence: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, `pnpm test` (119 API, 64 crypto, 7 DB, 3 web, 1 E2E), and `pnpm audit --audit-level=low` all passed; `bash -n scripts/verify-security.sh` passed; security verification reported 15 PASS / 4 WARN / 0 FAIL.
 - [!] Verification limits: GitHub Actions/release/GHCR/cosign cannot run until a remote is configured and workflows are pushed; the hardened Vault/OpenBao profile is intentionally deferred; expected standard-install WARNs remain for open bootstrap, no stored ciphertext payload, and unset backup encryption key.
 
+## Tailnet bind-IP — DONE (2026-09-21; CADDY_BIND_IP Tailnet-only publish)
+
+- [x] Caddy `80`/`443` host bindings now use `${CADDY_BIND_IP:-127.0.0.1}` in `docker-compose.yml`; default remains loopback. `.env.example` documents `CADDY_BIND_IP=127.0.0.1` with Tailnet guidance (`100.124.184.116` + `HTTP_PORT=80`/`HTTPS_PORT=443` + `APP_URL`).
+- [x] `install.sh` probes the configured bind IP first (`https://$CADDY_BIND_IP:${HTTPS_PORT}` / `http://$CADDY_BIND_IP:${HTTP_PORT}`) before loopback; `wait_healthy` and `status` both respect the setting.
+- [x] `scripts/verify-security.sh` now validates `CADDY_BIND_IP` (FAIL on wildcard/CIDR/invalid), restricts published ports so only the exact Caddy `80`/`443` mapping for the configured IP passes (service-scoped parser, WARN upgraded to FAIL for other services/ports), probes the Tailnet base for bootstrap, and adds WARN-only runtime port evidence. New ids `caddy-bind-ip` and `ports-runtime` appear in reports.
+- [x] Docs trace to implementation: `README.md` (default+Tailnet paragraph, `CADDY_BIND_IP` table row, FAQ wildcard note), `docs/ARCHITECTURE.md` (loopback default + single-IP rebind), `docs/OPERATIONS.md` (Tailnet operation section incl. `__Host-`/HTTPS caveat, `ss`/`curl`/smoke checks, peer manual step), `docs/SECURITY.md` (exact-IP verifier guarantee).
+- [!] Verification limit: `tailscale` CLI unavailable on this host — binding proven host-locally (`ss`/`docker compose port`/`curl` to `100.124.184.116`); reachability from another Tailnet device is a documented manual check.
+
 ## Key decisions
 
 - 2026-09-20 (user answers): deployment = single-household, one host, documented HA path; channels v1 = Email + Webhook + Telegram (Matrix/SFTP deferred); CI = GitHub Actions + GHCR; UI/docs = English only; license = permissive MIT/Apache-2.0 family (exact pick pending); threat priority = stolen-data-at-rest first (full STRIDE + ASVS map still required); release model = server-side automatic release for v1; hardened profile = NOT in v1 — standard-only v1, hardened (Vault vs OpenBao) deferred to next-development todo with ADRs.

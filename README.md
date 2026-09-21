@@ -53,7 +53,7 @@ Check the stack at any time:
 ./install.sh status
 ```
 
-The default LAN profile exposes Caddy at loopback ports `18080` and `18443`; values can be changed in `.env`. The default certificate uses Caddy's internal CA, so a browser may require a one-time trust step on a LAN.
+The default LAN profile exposes Caddy at loopback ports `18080` and `18443`; values can be changed in `.env`. Setting `CADDY_BIND_IP` to a single host IP (for example a Tailnet address such as `100.124.184.116` with `HTTP_PORT=80`/`HTTPS_PORT=443` for `http://100.124.184.116/`) publishes Caddy's `80`/`443` only on that address — dev override ports stay on `127.0.0.1`, and the verifier only permits that exact Caddy mapping. The default certificate uses Caddy's internal CA, so a browser may require a one-time trust step on a LAN.
 
 ## First switch guide
 
@@ -71,14 +71,15 @@ For channel-specific security guidance, see [Delivery channels](docs/DELIVERY_CH
 
 Copying `.env.example` manually is supported, but `./install.sh install` is safer because it creates real values for known placeholders and applies restrictive permissions.
 
-| Setting                   | Purpose                                                                                               |
-| ------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `MASTER_KEY`              | Server-side key-encryption key for stored payload envelopes. Keep it secret and backed up separately. |
-| `SESSION_SECRET`          | Session security material.                                                                            |
-| `POSTGRES_PASSWORD`       | PostgreSQL application password.                                                                      |
-| `BACKUP_ENCRYPTION_KEY`   | Enables encrypted installer backups; without it backups are explicitly warned as unencrypted.         |
-| `HTTP_PORT`, `HTTPS_PORT` | Loopback Caddy ports in the base Compose profile.                                                     |
-| `APP_ENV`                 | Environment indicator used by verification policy.                                                    |
+| Setting                   | Purpose                                                                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MASTER_KEY`              | Server-side key-encryption key for stored payload envelopes. Keep it secret and backed up separately.                                                            |
+| `SESSION_SECRET`          | Session security material.                                                                                                                                       |
+| `POSTGRES_PASSWORD`       | PostgreSQL application password.                                                                                                                                 |
+| `BACKUP_ENCRYPTION_KEY`   | Enables encrypted installer backups; without it backups are explicitly warned as unencrypted.                                                                    |
+| `HTTP_PORT`, `HTTPS_PORT` | Loopback Caddy ports in the base Compose profile.                                                                                                                |
+| `CADDY_BIND_IP`           | Host IP for Caddy's published 80/443; default `127.0.0.1` (loopback). Set to a single host IP such as a Tailnet address to reach the app from that network only. |
+| `APP_ENV`                 | Environment indicator used by verification policy.                                                                                                               |
 
 The shipped profile is **standard**: Caddy, API/scheduler, and PostgreSQL. A Vault/OpenBao hardened profile is intentionally deferred in v1; the installer rejects it instead of implying it exists. See [ADR-007](docs/adr/007-hardened-openbao-vs-vault.md).
 
@@ -115,7 +116,7 @@ No. It intentionally holds during infrastructure or clock uncertainty. Delivery 
 
 ### Can I expose it publicly?
 
-Yes only after you deliberately configure public TLS/DNS and harden host operations. The standard Compose file binds to loopback by default. The `--tls le` and `--tls byo` installer modes explain the required manual Caddy setup.
+Yes only after you deliberately configure public TLS/DNS and harden host operations. The standard Compose file binds to loopback by default. Tailnet-only publishing via `CADDY_BIND_IP` is a deliberate, narrower exposure; wildcard binds (`0.0.0.0`/`::`) are rejected by the verifier. The `--tls le` and `--tls byo` installer modes explain the required manual Caddy setup.
 
 ### Is the hardened profile available?
 

@@ -14,7 +14,7 @@ flowchart LR
   S --> D[Email / Webhook / Telegram]
 ```
 
-The standard Docker Compose profile runs Caddy, the API/scheduler image, and PostgreSQL on an internal `app_net` network. PostgreSQL has no host port. Caddy is the only published service and binds to loopback in the base compose file. The API image runs as the non-root `node` user. Images used by Compose are digest-pinned.
+The standard Docker Compose profile runs Caddy, the API/scheduler image, and PostgreSQL on an internal `app_net` network. PostgreSQL has no host port. Caddy is the only published service and binds to loopback by default; `CADDY_BIND_IP` may rebind the host side of its `80`/`443` publications to exactly one address (for example a Tailnet IP `100.124.184.116`). All other services publish nothing in base/prod; dev debug ports stay on `127.0.0.1`. The API image runs as the non-root `node` user. Images used by Compose are digest-pinned.
 
 Caddy terminates TLS, applies browser security headers, and proxies to the API. The default Caddy configuration uses its internal CA for LAN use. Public ACME and bring-your-own certificate deployment require the documented Caddy configuration change; the installer intentionally does not pretend that those modes are automatic.
 

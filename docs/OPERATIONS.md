@@ -27,6 +27,30 @@ curl -sk https://127.0.0.1:18443/api/health
 
 Port values may differ from the defaults in `.env`.
 
+## Tailnet / bind-IP operation
+
+To reach the app from other devices on the same Tailnet, set a single host IP in `.env`:
+
+```bash
+CADDY_BIND_IP=100.124.184.116
+HTTP_PORT=80
+HTTPS_PORT=443
+APP_URL=http://100.124.184.116
+./install.sh upgrade
+```
+
+Verify the binding:
+
+```bash
+ss -ltn | grep -E '100\.124\.184\.116:(80|443)[[:space:]]'   # LISTEN present
+ss -ltn | grep -E '(0\.0\.0\.0|\[::\]):(80|443)[[:space:]]' || echo "no wildcard binds"
+curl -fsS http://100.124.184.116/api/health                  # {"status":"ok"}
+CADDY_BASE_URL=http://100.124.184.116 pnpm --filter @heartbeat-vault/e2e test:caddy-smoke
+scripts/verify-security.sh                                   # 0 FAIL; ports/bind checks PASS
+```
+
+Raw HTTP serves the SPA and health endpoint, but browser sign-in requires HTTPS because the session cookie is `__Host-session` (rejected over plain HTTP). Use `https://100.124.184.116/` with a one-time trust of Caddy's internal CA, or provide a trusted certificate separately; passkeys also require HTTPS. Peer reachability from another Tailnet device must be checked separately — no `tailscale` CLI is assumed on the host.
+
 ## Backups and restore
 
 Create a database backup with:
