@@ -76,8 +76,9 @@ services:
     # caddy:2-alpine — pinned digest; handles automatic TLS (tls internal for LAN).
     restart: "no"
     ports:
-      - "127.0.0.1:${HTTP_PORT:-18080}:80"
-      - "127.0.0.1:${HTTPS_PORT:-18443}:443"
+      # NEVER set CADDY_BIND_IP to 0.0.0.0 or ::; Caddy must not use wildcard binds.
+      - "${CADDY_BIND_IP:-127.0.0.1}:${HTTP_PORT:-18080}:80"
+      - "${CADDY_BIND_IP:-127.0.0.1}:${HTTPS_PORT:-18443}:443"
       # Admin API is NOT published — only reachable inside app_net by healthcheck.
       # If host admin access is needed, publish 127.0.0.1:2019 in override only.
     volumes:
