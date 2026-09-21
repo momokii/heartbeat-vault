@@ -29,11 +29,18 @@ function generateRecoveryCode(): string {
   return `${code.slice(0, 4)}-${code.slice(4)}`;
 }
 
+function sessionCookieName(): string {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) return '__Host-session';
+  return process.env.APP_ENV === 'production' ? '__Host-session' : 'session';
+}
+
 function cookieOpts() {
+  const isProd = process.env.APP_ENV === 'production';
+  const isTest = process.env.NODE_ENV === 'test' || !!process.env.VITEST;
   return {
     path: '/',
     httpOnly: true,
-    secure: true,
+    secure: isProd || isTest,
     sameSite: 'strict' as const,
   };
 }
@@ -200,7 +207,7 @@ export function registerRecoveryRoutes(
     } finally {
       client.release();
     }
-    reply.setCookie('__Host-session', token, { ...cookieOpts(), expires: expiresAt });
+    reply.setCookie(sessionCookieName(), token, { ...cookieOpts(), expires: expiresAt });
     return reply.status(200).send({ id: user.id, email: user.email, role: user.role });
   });
 }

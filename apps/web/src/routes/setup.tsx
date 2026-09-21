@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { z } from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,13 +24,36 @@ const SetupFormSchema = z
   });
 
 type SetupState =
+  | { readonly kind: 'checking' }
+  | { readonly kind: 'alreadyDone' }
   | { readonly kind: 'idle' }
   | { readonly kind: 'submitting' }
   | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'complete'; readonly email: string };
 
 export function SetupPage() {
-  const [state, setState] = useState<SetupState>({ kind: 'idle' });
+  const [state, setState] = useState<SetupState>({ kind: 'checking' });
+
+  useEffect(() => {
+    let cancelled = false;
+    async function probe(): Promise<void> {
+      try {
+        const res = await fetch('/api/setup', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}',
+        });
+        if (res.status === 410 && !cancelled) setState({ kind: 'alreadyDone' });
+        else if (!cancelled) setState({ kind: 'idle' });
+      } catch {
+        if (!cancelled) setState({ kind: 'idle' });
+      }
+    }
+    void probe();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -62,12 +85,48 @@ export function SetupPage() {
       });
       setState({ kind: 'complete', email: result.email });
     } catch (error) {
-      const message =
-        error instanceof ApiError && error.status === 410
-          ? 'This setup link is no longer available. Sign in if this instance has already been configured.'
-          : 'Setup could not be completed. Check the token and details, then try again.';
+      if (error instanceof ApiError && error.status === 410) {
+        setState({ kind: 'alreadyDone' });
+        return;
+      }
+      const message = 'Setup could not be completed. Check the token and details, then try again.';
       setState({ kind: 'error', message });
     }
+  }
+
+  if (state.kind === 'checking') {
+    return (
+      <div className="mx-auto max-w-lg space-y-6">
+        <p className="text-sm text-[var(--color-muted-foreground)]">Checking setup status…</p>
+      </div>
+    );
+  }
+
+  if (state.kind === 'alreadyDone') {
+    return (
+      <div className="mx-auto max-w-lg space-y-6">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-primary)]">
+            Setup already completed
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            This vault is already configured.
+          </h1>
+        </div>
+        <Card>
+          <CardContent className="space-y-4 pt-6">
+            <p className="text-sm leading-6 text-[var(--color-muted-foreground)]">
+              The one-time setup token has been permanently disabled after the first administrator
+              was created. This is the correct, secure state for a Heartbeat Vault instance — setup
+              is single-use by design.
+            </p>
+            <Button className="w-full" onClick={() => window.location.assign('/login')}>
+              Go to sign in
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   if (state.kind === 'complete') {

@@ -73,9 +73,12 @@ export async function registerUserRoutes(app: FastifyInstance, pool: Pool): Prom
 
       // if actor revoked own sessions, clear cookie
       if (actor.id === id) {
-        reply.clearCookie('__Host-session', {
+        const isTest = process.env.NODE_ENV === 'test' || !!process.env.VITEST;
+        const isProd = process.env.APP_ENV === 'production' || isTest;
+        const name = isProd || isTest ? '__Host-session' : 'session';
+        reply.clearCookie(name, {
           path: '/',
-          secure: true,
+          secure: isProd || isTest,
           httpOnly: true,
           sameSite: 'strict',
         });

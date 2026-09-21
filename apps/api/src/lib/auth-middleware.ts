@@ -36,7 +36,8 @@ export function createAuthPreHandler(pool: Pool, options?: AuthPreHandlerOptions
     request: FastifyRequest,
     reply: FastifyReply,
   ): Promise<void> {
-    const raw = (request.cookies as Record<string, string | undefined>)?.['__Host-session'];
+    const cookies = (request.cookies as Record<string, string | undefined>) ?? {};
+    const raw = cookies['__Host-session'] ?? cookies['session'];
     if (!raw || typeof raw !== 'string' || raw.length === 0) {
       await reply.status(401).send({ error: 'unauthorized' });
       return;

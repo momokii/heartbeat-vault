@@ -20,11 +20,18 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
+function sessionCookieName(): string {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) return '__Host-session';
+  return process.env.APP_ENV === 'production' ? '__Host-session' : 'session';
+}
+
 function cookieOpts() {
+  const isProd = process.env.APP_ENV === 'production';
+  const isTest = process.env.NODE_ENV === 'test' || !!process.env.VITEST;
   return {
     path: '/',
     httpOnly: true,
-    secure: true,
+    secure: isProd || isTest,
     sameSite: 'strict' as const,
   };
 }
@@ -147,7 +154,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         requestId: request.id,
       });
       await client.query('COMMIT');
-      reply.setCookie('__Host-session', token, {
+      reply.setCookie(sessionCookieName(), token, {
         ...cookieOpts(),
         expires: expiresAt,
       });
@@ -187,11 +194,8 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
     } finally {
       client.release();
     }
-    reply.clearCookie('__Host-session', {
-      path: '/',
-      secure: true,
-      httpOnly: true,
-      sameSite: 'strict',
+    reply.clearCookie(sessionCookieName(), {
+      ...cookieOpts(),
     });
     return reply.status(200).send({ ok: true });
   });
@@ -219,11 +223,8 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
     } finally {
       client.release();
     }
-    reply.clearCookie('__Host-session', {
-      path: '/',
-      secure: true,
-      httpOnly: true,
-      sameSite: 'strict',
+    reply.clearCookie(sessionCookieName(), {
+      ...cookieOpts(),
     });
     return reply.status(200).send({ ok: true });
   });
