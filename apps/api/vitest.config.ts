@@ -14,6 +14,7 @@ export default defineConfig({
       provider: 'v8',
       include: [
         'src/routes/auth.ts',
+        'src/routes/account.ts',
         'src/routes/two-factor.ts',
         'src/lib/auth-middleware.ts',
         'src/lib/totp-store.ts',
