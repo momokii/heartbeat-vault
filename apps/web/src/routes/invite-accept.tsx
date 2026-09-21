@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth';
 
 const ConsumeResponseSchema = z.object({
   id: z.string(),
@@ -31,9 +32,15 @@ type AcceptState =
   | { readonly kind: 'complete'; readonly email: string; readonly role: string };
 
 export function InviteAcceptPage() {
+  const auth = useAuth();
   const [searchParams] = useSearchParams();
   const [state, setState] = useState<AcceptState>({ kind: 'idle' });
   const prefilledToken = searchParams.get('token') ?? '';
+
+  if (auth.kind === 'authenticated') return <Navigate to="/" replace />;
+  if (auth.kind === 'loading') {
+    return <p className="text-sm text-[var(--color-muted-foreground)]">Checking your session…</p>;
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
