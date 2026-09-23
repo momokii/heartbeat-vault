@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
+import {
+  UserPasswordReset,
+  type PasswordResetResult,
+} from '@/components/admin/user-password-reset';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,6 +19,11 @@ const userSchema = z.object({
 });
 const usersSchema = z.array(userSchema);
 const inviteSchema = z.object({ id: z.string().uuid(), token: z.string().min(1) });
+const passwordResetSchema = z.object({
+  id: z.string().uuid(),
+  token: z.string().min(1),
+  expiresAt: z.string().datetime(),
+});
 const inviteFormSchema = z.object({
   email: z.string().email('Enter a valid email address.'),
   role: z.enum(['user', 'admin']),
@@ -33,6 +42,9 @@ export function AdminPage() {
   const [state, setState] = useState<PageState>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
   const [inviteResult, setInviteResult] = useState<InviteResult>({ kind: 'idle' });
+  const [passwordResetResult, setPasswordResetResult] = useState<PasswordResetResult>({
+    kind: 'idle',
+  });
   const loadUsers = useCallback(async (signal?: AbortSignal): Promise<void> => {
     try {
       const users = await apiClient.request({
@@ -86,6 +98,23 @@ export function AdminPage() {
       });
     } finally {
       setBusy(false);
+    }
+  }
+  async function createPasswordReset(userId: string): Promise<void> {
+    setPasswordResetResult({ kind: 'submitting', userId });
+    try {
+      const result = await apiClient.request({
+        method: 'POST',
+        path: `/users/${userId}/password-reset`,
+        schema: passwordResetSchema,
+      });
+      setPasswordResetResult({ kind: 'success', userId, token: result.token });
+    } catch {
+      setPasswordResetResult({
+        kind: 'error',
+        userId,
+        message: 'The password reset could not be created. Try again.',
+      });
     }
   }
   if (state.kind === 'loading')
@@ -195,7 +224,12 @@ export function AdminPage() {
                 className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
               >
                 <span>{user.email}</span>
-                <span className="rounded-full border px-2 py-0.5 text-xs">{user.role}</span>
+                <UserPasswordReset
+                  userId={user.id}
+                  role={user.role}
+                  result={passwordResetResult}
+                  onCreatePasswordReset={createPasswordReset}
+                />
               </li>
             ))}
           </ul>

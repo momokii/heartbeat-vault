@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminPage } from './admin';
@@ -89,5 +89,122 @@ describe('AdminPage', () => {
       '/api/users',
       expect.objectContaining({ method: 'GET' }),
     );
+  });
+
+  it('posts the selected user reset and shows its token and encoded link after 201', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([existingUser, invitedUser]))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            id: invitedUser.id,
+            token: 'reset token',
+            expiresAt: '2026-09-22T00:00:00.000Z',
+          },
+          201,
+        ),
+      );
+
+    render(
+      <MemoryRouter>
+        <AdminPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText(invitedUser.email);
+    expect(
+      screen.queryByText(/Password reset token — copy and share securely now:/),
+    ).not.toBeInTheDocument();
+
+    const invitedUserRow = screen.getByText(invitedUser.email).closest('li');
+    if (!(invitedUserRow instanceof HTMLLIElement))
+      throw new Error('Invited user row is unavailable');
+    fireEvent.click(within(invitedUserRow).getByRole('button', { name: 'Reset password' }));
+
+    expect(
+      await screen.findByText(/Password reset token — copy and share securely now: reset token/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.textContent ===
+          `Reset link: ${window.location.origin}/account/reset?token=reset%20token`,
+      ),
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/users/${invitedUser.id}/password-reset`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('only disables the selected user password reset action while it is pending', async () => {
+    const pendingReset = deferred<Response>();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([existingUser, invitedUser]))
+      .mockImplementationOnce(() => pendingReset.promise);
+
+    render(
+      <MemoryRouter>
+        <AdminPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText(invitedUser.email);
+    const existingUserRow = screen.getByText(existingUser.email).closest('li');
+    if (!(existingUserRow instanceof HTMLLIElement))
+      throw new Error('Existing user row is unavailable');
+    fireEvent.click(within(existingUserRow).getByRole('button', { name: 'Reset password' }));
+
+    expect(screen.getByRole('button', { name: 'Creating password reset…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset password' })).toBeEnabled();
+
+    pendingReset.resolve(
+      jsonResponse(
+        {
+          id: existingUser.id,
+          token: 'pending-token',
+          expiresAt: '2026-09-22T00:00:00.000Z',
+        },
+        201,
+      ),
+    );
+    await screen.findByText(/Password reset token — copy and share securely now: pending-token/);
+  });
+
+  it('clears the password reset token after a failed request and shows a generic error', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([existingUser]))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            id: existingUser.id,
+            token: 'first-reset-token',
+            expiresAt: '2026-09-22T00:00:00.000Z',
+          },
+          201,
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ error: 'unavailable' }, 500));
+
+    render(
+      <MemoryRouter>
+        <AdminPage />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText(existingUser.email);
+    fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
+    await screen.findByText(
+      /Password reset token — copy and share securely now: first-reset-token/,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The password reset could not be created. Try again.',
+    );
+    expect(screen.queryByText(/first-reset-token/)).not.toBeInTheDocument();
   });
 });
