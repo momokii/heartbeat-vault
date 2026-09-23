@@ -6,19 +6,20 @@ Error responses commonly use `{ "error": "..." }`. Validate behavior against the
 
 ## Public and bootstrap routes
 
-| Method | Path                         | Purpose                                                                                                  |
-| ------ | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/api/health`                | Service health probe.                                                                                    |
-| `POST` | `/api/setup`                 | Create the first administrator using the one-time setup token; permanently unavailable after completion. |
-| `POST` | `/api/login`                 | Start password login.                                                                                    |
-| `POST` | `/api/login/recover`         | Complete login/recovery flow when additional verification is required.                                   |
-| `POST` | `/api/register`              | Register only when an administrator has explicitly enabled open registration.                            |
-| `POST` | `/api/invites/consume`       | Consume a hashed, single-use user invitation.                                                            |
-| `GET`  | `/api/heartbeat/link/:token` | Inspect a heartbeat-link token flow.                                                                     |
-| `POST` | `/api/heartbeat/link/:token` | Submit a heartbeat-link check-in.                                                                        |
-| `POST` | `/api/heartbeat/:token`      | Submit token-based heartbeat confirmation.                                                               |
-| `POST` | `/api/recipients/accept`     | Accept a recipient invitation.                                                                           |
-| `POST` | `/api/recipients/vote`       | Submit a recipient recovery/abort vote.                                                                  |
+| Method | Path                          | Purpose                                                                                                  |
+| ------ | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/health`                 | Service health probe.                                                                                    |
+| `POST` | `/api/setup`                  | Create the first administrator using the one-time setup token; permanently unavailable after completion. |
+| `POST` | `/api/login`                  | Start password login.                                                                                    |
+| `POST` | `/api/login/recover`          | Complete login/recovery flow when additional verification is required.                                   |
+| `POST` | `/api/register`               | Register only when an administrator has explicitly enabled open registration.                            |
+| `POST` | `/api/invites/consume`        | Consume a hashed, single-use user invitation.                                                            |
+| `POST` | `/api/account/password/reset` | Consume a password-reset token and set a new password.                                                   |
+| `GET`  | `/api/heartbeat/link/:token`  | Inspect a heartbeat-link token flow.                                                                     |
+| `POST` | `/api/heartbeat/link/:token`  | Submit a heartbeat-link check-in.                                                                        |
+| `POST` | `/api/heartbeat/:token`       | Submit token-based heartbeat confirmation.                                                               |
+| `POST` | `/api/recipients/accept`      | Accept a recipient invitation.                                                                           |
+| `POST` | `/api/recipients/vote`        | Submit a recipient recovery/abort vote.                                                                  |
 
 The setup route returns `410 Gone` once bootstrap is complete. Empty-body probes are safe for observing its `400` (open) or `410` (closed) state, but real setup tokens must be treated like administrator credentials.
 
@@ -33,8 +34,15 @@ The setup route returns `410 Gone` once bootstrap is complete. Empty-body probes
 | `GET`  | `/api/users`                     | List users; administrative access required.                                     |
 | `GET`  | `/api/users/:id`                 | Read a user; permitted for that user or an administrator.                       |
 | `POST` | `/api/users/:id/revoke-sessions` | Revoke a user's sessions; permitted for that user or an administrator.          |
+| `POST` | `/api/users/:id/password-reset`  | Issue a password-reset token; administrative access required.                   |
 | `POST` | `/api/invites`                   | Create a user invitation; administrative access required.                       |
 | `PUT`  | `/api/admin/settings`            | Set instance settings; administrative access required.                          |
+
+### Password resets
+
+`POST /api/users/:id/password-reset` requires an authenticated administrator and a UUID user ID. It returns `201 Created` with `{ "id", "token", "expiresAt" }`, where `expiresAt` is an ISO 8601 timestamp. A malformed ID returns `400 { "error": "invalid_request" }`; an unknown user returns `404 { "error": "not_found" }`; missing authentication returns `401` and insufficient privileges return `403`. Issuing a reset expires any prior unconsumed reset for that user, records `password_reset_issued`, and returns the plaintext token only in this response.
+
+`POST /api/account/password/reset` is public. Its JSON body is `{ "token", "newPassword" }`, and `newPassword` must contain at least 12 characters. A successful consumption returns `200 { "ok": true }`. Bad, expired, consumed, or unknown tokens, and malformed bodies, return `400 { "error": "invalid_request" }`. The endpoint is rate-limited by source IP and returns `429 { "error": "rate_limited" }` with `Retry-After` when limited. Reset tokens expire after 24 hours, are single-use, and only the most recently issued token for a user remains usable. Successful consumption revokes all of that user's sessions, records `password_reset_consumed`, and does not sign the caller in automatically.
 
 ### Two-factor endpoints
 

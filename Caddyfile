@@ -66,6 +66,14 @@
 		}
 	}
 
+	# Password-reset links can contain a bearer token. Serve the SPA without access logs.
+	log_skip /account/reset*
+	handle /account/reset* {
+		root * /usr/share/caddy
+		try_files {path} /index.html
+		file_server
+	}
+
 	# Serve the Vite build and return the SPA entry point for BrowserRouter routes.
 	handle {
 		root * /usr/share/caddy
