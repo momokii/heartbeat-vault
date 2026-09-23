@@ -43,6 +43,13 @@
       "when": 1790217600000,
       "tag": "0005_delivery_retry_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790304000000,
+      "tag": "0006_password_resets",
+      "breakpoints": true
     }
   ]
 }

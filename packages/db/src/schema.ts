@@ -273,6 +273,21 @@ export const invites = pgTable(
   t => [check('invites_role_check', sql`${t.role} IN ('admin','user')`)],
 );
 
+// ── password_resets ───────────────────────────────────────────────────────
+export const passwordResets = pgTable('password_resets', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .default(sql`clock_timestamp()`),
+});
+
 // ── sessions ─────────────────────────────────────────────────────────────
 export const sessions = pgTable('sessions', {
   id: uuid('id').defaultRandom().primaryKey(),
