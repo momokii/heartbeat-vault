@@ -60,6 +60,9 @@ export async function registerPasswordResetRoutes(app: FastifyInstance, pool: Po
       if (actor === undefined) {
         return reply.status(401).send({ error: 'unauthorized' });
       }
+      if (parsedParams.data.id === actor.id) {
+        return reply.status(403).send({ error: 'cannot_reset_own_password' });
+      }
 
       const token = randomBytes(32).toString('base64url');
       const tokenHash = hashToken(token);

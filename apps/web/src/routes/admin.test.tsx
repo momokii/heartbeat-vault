@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthProvider } from '@/lib/auth';
 import { AdminPage } from './admin';
 
 const existingUser = {
@@ -8,6 +9,11 @@ const existingUser = {
   email: 'existing@example.test',
   role: 'admin',
   created_at: '2026-09-21T00:00:00.000Z',
+};
+const currentAdmin = {
+  id: '99999999-9999-4999-8999-999999999999',
+  email: 'admin-self@example.test',
+  role: 'admin',
 };
 const invitedUser = {
   id: '22222222-2222-4222-8222-222222222222',
@@ -45,6 +51,7 @@ describe('AdminPage', () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse([existingUser]))
+      .mockResolvedValueOnce(jsonResponse(currentAdmin))
       .mockImplementationOnce(() => firstInvite.promise)
       .mockResolvedValueOnce(
         jsonResponse({ id: '33333333-3333-4333-8333-333333333333', token: 'test-token' }, 201),
@@ -53,7 +60,9 @@ describe('AdminPage', () => {
 
     render(
       <MemoryRouter>
-        <AdminPage />
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
       </MemoryRouter>,
     );
 
@@ -85,7 +94,7 @@ describe('AdminPage', () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       '/api/users',
       expect.objectContaining({ method: 'GET' }),
     );
@@ -95,6 +104,7 @@ describe('AdminPage', () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse([existingUser, invitedUser]))
+      .mockResolvedValueOnce(jsonResponse(currentAdmin))
       .mockResolvedValueOnce(
         jsonResponse(
           {
@@ -108,7 +118,9 @@ describe('AdminPage', () => {
 
     render(
       <MemoryRouter>
-        <AdminPage />
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
       </MemoryRouter>,
     );
 
@@ -121,6 +133,7 @@ describe('AdminPage', () => {
     if (!(invitedUserRow instanceof HTMLLIElement))
       throw new Error('Invited user row is unavailable');
     fireEvent.click(within(invitedUserRow).getByRole('button', { name: 'Reset password' }));
+    fireEvent.click(within(invitedUserRow).getByRole('button', { name: 'Confirm reset' }));
 
     expect(
       await screen.findByText(/Password reset token — copy and share securely now: reset token/),
@@ -133,7 +146,7 @@ describe('AdminPage', () => {
       ),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+      3,
       `/api/users/${invitedUser.id}/password-reset`,
       expect.objectContaining({ method: 'POST' }),
     );
@@ -143,11 +156,14 @@ describe('AdminPage', () => {
     const pendingReset = deferred<Response>();
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse([existingUser, invitedUser]))
+      .mockResolvedValueOnce(jsonResponse(currentAdmin))
       .mockImplementationOnce(() => pendingReset.promise);
 
     render(
       <MemoryRouter>
-        <AdminPage />
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
       </MemoryRouter>,
     );
 
@@ -156,6 +172,7 @@ describe('AdminPage', () => {
     if (!(existingUserRow instanceof HTMLLIElement))
       throw new Error('Existing user row is unavailable');
     fireEvent.click(within(existingUserRow).getByRole('button', { name: 'Reset password' }));
+    fireEvent.click(within(existingUserRow).getByRole('button', { name: 'Confirm reset' }));
 
     expect(screen.getByRole('button', { name: 'Creating password reset…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Reset password' })).toBeEnabled();
@@ -176,6 +193,7 @@ describe('AdminPage', () => {
   it('clears the password reset token after a failed request and shows a generic error', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse([existingUser]))
+      .mockResolvedValueOnce(jsonResponse(currentAdmin))
       .mockResolvedValueOnce(
         jsonResponse(
           {
@@ -190,21 +208,101 @@ describe('AdminPage', () => {
 
     render(
       <MemoryRouter>
-        <AdminPage />
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
       </MemoryRouter>,
     );
 
     await screen.findByText(existingUser.email);
-    fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
+    const existingUserRow = screen.getByText(existingUser.email).closest('li');
+    if (!(existingUserRow instanceof HTMLLIElement))
+      throw new Error('Existing user row is unavailable');
+    fireEvent.click(within(existingUserRow).getByRole('button', { name: 'Reset password' }));
+    fireEvent.click(within(existingUserRow).getByRole('button', { name: 'Confirm reset' }));
     await screen.findByText(
       /Password reset token — copy and share securely now: first-reset-token/,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset password' }));
+    fireEvent.click(within(existingUserRow).getByRole('button', { name: 'Reset password' }));
+    fireEvent.click(within(existingUserRow).getByRole('button', { name: 'Confirm reset' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'The password reset could not be created. Try again.',
     );
     expect(screen.queryByText(/first-reset-token/)).not.toBeInTheDocument();
+  });
+
+  it('asks for confirmation before issuing a password reset', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([existingUser, invitedUser]))
+      .mockResolvedValueOnce(jsonResponse(currentAdmin));
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText(invitedUser.email);
+    const invitedUserRow = screen.getByText(invitedUser.email).closest('li');
+    if (!(invitedUserRow instanceof HTMLLIElement))
+      throw new Error('Invited user row is unavailable');
+    fireEvent.click(within(invitedUserRow).getByRole('button', { name: 'Reset password' }));
+
+    expect(
+      await screen.findByRole('alertdialog', {
+        name: `Confirm password reset for ${invitedUser.email}`,
+      }),
+    ).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/users/${invitedUser.id}/password-reset`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+
+    fireEvent.click(within(invitedUserRow).getByRole('button', { name: 'Cancel' }));
+    expect(
+      screen.queryByRole('alertdialog', {
+        name: `Confirm password reset for ${invitedUser.email}`,
+      }),
+    ).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/users/${invitedUser.id}/password-reset`,
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it('hides the reset action for the signed-in administrator', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([existingUser, invitedUser]))
+      .mockResolvedValueOnce(jsonResponse(existingUser));
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText(existingUser.email);
+    const selfRow = screen.getByText(existingUser.email).closest('li');
+    if (!(selfRow instanceof HTMLLIElement)) throw new Error('Self row is unavailable');
+    expect(
+      within(selfRow).queryByRole('button', { name: 'Reset password' }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(selfRow).getByText('Use Account to change your own password.'),
+    ).toBeInTheDocument();
+
+    const invitedUserRow = screen.getByText(invitedUser.email).closest('li');
+    if (!(invitedUserRow instanceof HTMLLIElement))
+      throw new Error('Invited user row is unavailable');
+    expect(
+      within(invitedUserRow).getByRole('button', { name: 'Reset password' }),
+    ).toBeInTheDocument();
   });
 });

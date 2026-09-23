@@ -137,6 +137,17 @@ describe('admin-issued password resets', () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it('rejects an administrator issuing a reset for their own account', async () => {
+    // Given an authenticated administrator targeting themselves.
+    const { adminId, adminCookie } = await createIssuanceContext();
+
+    // When the administrator attempts to reset their own password.
+    const response = await harness.issueReset(adminId, adminCookie);
+
+    // Then the endpoint refuses; self-service uses the account password change.
+    expect(response.statusCode).toBe(403);
+  });
+
   it('returns 404 when an administrator issues a reset for an unknown user', async () => {
     // Given an authenticated administrator and a syntactically valid absent user ID.
     const { adminCookie } = await createIssuanceContext();

@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth';
 
 const userSchema = z.object({
   id: z.string().uuid(),
@@ -39,6 +40,7 @@ type InviteResult =
   | { readonly kind: 'error'; readonly message: string };
 
 export function AdminPage() {
+  const auth = useAuth();
   const [state, setState] = useState<PageState>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
   const [inviteResult, setInviteResult] = useState<InviteResult>({ kind: 'idle' });
@@ -226,7 +228,9 @@ export function AdminPage() {
                 <span>{user.email}</span>
                 <UserPasswordReset
                   userId={user.id}
+                  email={user.email}
                   role={user.role}
+                  isSelf={auth.kind === 'authenticated' && auth.user.id === user.id}
                   result={passwordResetResult}
                   onCreatePasswordReset={createPasswordReset}
                 />

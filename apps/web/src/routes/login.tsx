@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -115,6 +115,21 @@ export function LoginPage() {
               {state.kind === 'submitting' ? 'Signing in…' : 'Continue'}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="space-y-2 pt-6 text-sm text-[var(--color-muted-foreground)]">
+          <p className="font-medium text-[var(--color-foreground)]">Forgot your password?</p>
+          <p>
+            Password resets are issued by an administrator. Ask yours for a reset link, then open it
+            here to set a new password — no sign-in required.
+          </p>
+          <Link
+            to="/account/reset"
+            className="font-medium text-[var(--color-foreground)] underline underline-offset-4"
+          >
+            Open the password reset page
+          </Link>
         </CardContent>
       </Card>
     </div>
