@@ -1,8 +1,8 @@
-// In-memory per-IP token bucket for login + 2FA rate limiting.
+// In-memory per-IP token bucket for login, 2FA, and password-reset rate limiting.
 // Postgres-backed limiter is deferred to scaling — see ADR.
-// login: 5 attempts per 15 minutes; 2fa: 10 per 15 minutes → 429 with Retry-After.
+// login/password-reset: 5 attempts per 15 minutes; 2fa: 10 → 429 with Retry-After.
 const WINDOW_MS = 15 * 60 * 1000;
-const LIMITS = { login: 5, '2fa': 10 } as const;
+const LIMITS = { login: 5, '2fa': 10, 'password-reset': 5 } as const;
 export type RateLimitScope = keyof typeof LIMITS;
 
 type Bucket = { readonly count: number; readonly windowStart: number };

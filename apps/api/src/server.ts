@@ -4,6 +4,7 @@ import cookie from '@fastify/cookie';
 import type { Pool } from 'pg';
 import { registerSetupRoutes } from './routes/setup.js';
 import { registerAccountRoutes } from './routes/account.js';
+import { registerPasswordResetRoutes } from './routes/password-resets.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerTwoFactorRoutes } from './routes/two-factor.js';
 import { registerInviteRoutes } from './routes/invites.js';
@@ -48,6 +49,7 @@ export async function buildServer(
   await registerSetupRoutes(app, pool);
   await registerAuthRoutes(app, pool);
   await registerAccountRoutes(app, pool);
+  await registerPasswordResetRoutes(app, pool);
   await registerTwoFactorRoutes(app, pool);
   await registerInviteRoutes(app, pool);
   await registerUserRoutes(app, pool);
