@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,14 @@ const PasswordChangeSchema = z
     path: ['confirmPassword'],
   });
 const OkResponseSchema = z.object({ ok: z.literal(true) });
+const SessionSchema = z.object({
+  id: z.string().uuid(),
+  createdAt: z.string(),
+  expiresAt: z.string(),
+  revokedAt: z.string().nullable(),
+  current: z.boolean(),
+});
+const SessionsSchema = z.array(SessionSchema);
 const sessionPathByAction = {
   logout: '/logout',
   revokeAll: '/sessions/revoke-all',
@@ -35,10 +43,17 @@ type SessionActionState =
   | { readonly kind: 'submitting'; readonly action: SessionAction }
   | { readonly kind: 'error'; readonly action: SessionAction };
 
+function formatSessionTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(value),
+  );
+}
+
 export function AccountPage() {
   const auth = useAuth();
   const [passwordState, setPasswordState] = useState<PasswordFormState>({ kind: 'idle' });
   const [sessionState, setSessionState] = useState<SessionActionState>({ kind: 'idle' });
+  const [sessions, setSessions] = useState<readonly z.infer<typeof SessionSchema>[] | null>(null);
 
   async function changePassword(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -102,6 +117,18 @@ export function AccountPage() {
       throw error;
     }
   }
+
+  useEffect(() => {
+    if (auth.kind !== 'authenticated') return;
+    const controller = new AbortController();
+    apiClient
+      .request({ path: '/sessions', schema: SessionsSchema, signal: controller.signal })
+      .then(setSessions)
+      .catch(() => {
+        if (!controller.signal.aborted) setSessions([]);
+      });
+    return () => controller.abort();
+  }, [auth.kind]);
 
   if (auth.kind === 'loading') {
     return <p className="text-sm text-[var(--color-muted-foreground)]">Checking your session…</p>;
@@ -206,6 +233,35 @@ export function AccountPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {sessions === null ? (
+            <p className="text-sm text-[var(--color-muted-foreground)]">Loading sessions…</p>
+          ) : sessions.length === 0 ? (
+            <p className="text-sm text-[var(--color-muted-foreground)]">
+              No sessions found for this account.
+            </p>
+          ) : (
+            <ul className="divide-y rounded-md border">
+              {sessions.map(session => (
+                <li
+                  key={session.id}
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+                >
+                  <span className="font-mono text-xs">{session.id.slice(0, 8)}…</span>
+                  <span className="text-xs text-[var(--color-muted-foreground)]">
+                    Created {formatSessionTime(session.createdAt)} · expires{' '}
+                    {formatSessionTime(session.expiresAt)}
+                  </span>
+                  {session.revokedAt !== null ? (
+                    <span className="rounded-full border px-2 py-0.5 text-xs">Revoked</span>
+                  ) : session.current ? (
+                    <span className="rounded-full border px-2 py-0.5 text-xs">This session</span>
+                  ) : (
+                    <span className="rounded-full border px-2 py-0.5 text-xs">Active</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="flex flex-wrap gap-3">
             <Button
               type="button"

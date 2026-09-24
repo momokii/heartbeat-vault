@@ -25,18 +25,19 @@ The setup route returns `410 Gone` once bootstrap is complete. Empty-body probes
 
 ## Authenticated account and administration routes
 
-| Method | Path                             | Purpose                                                                         |
-| ------ | -------------------------------- | ------------------------------------------------------------------------------- |
-| `GET`  | `/api/me`                        | Current authenticated user/session information.                                 |
-| `POST` | `/api/logout`                    | Revoke the current session.                                                     |
-| `POST` | `/api/account/password`          | Verify the current password, then replace it with a new 12+ character password. |
-| `POST` | `/api/sessions/revoke-all`       | Revoke all sessions for the current user.                                       |
-| `GET`  | `/api/users`                     | List users; administrative access required.                                     |
-| `GET`  | `/api/users/:id`                 | Read a user; permitted for that user or an administrator.                       |
-| `POST` | `/api/users/:id/revoke-sessions` | Revoke a user's sessions; permitted for that user or an administrator.          |
-| `POST` | `/api/users/:id/password-reset`  | Issue a password-reset token; administrative access required.                   |
-| `POST` | `/api/invites`                   | Create a user invitation; administrative access required.                       |
-| `PUT`  | `/api/admin/settings`            | Set instance settings; administrative access required.                          |
+| Method | Path                             | Purpose                                                                                                                 |
+| ------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/me`                        | Current authenticated user/session information.                                                                         |
+| `POST` | `/api/logout`                    | Revoke the current session.                                                                                             |
+| `POST` | `/api/account/password`          | Verify the current password, then replace it with a new 12+ character password.                                         |
+| `GET`  | `/api/sessions`                  | List the current user's sessions (id, created/expiry times, revocation state, current-session flag; no token material). |
+| `POST` | `/api/sessions/revoke-all`       | Revoke all sessions for the current user.                                                                               |
+| `GET`  | `/api/users`                     | List users; administrative access required.                                                                             |
+| `GET`  | `/api/users/:id`                 | Read a user; permitted for that user or an administrator.                                                               |
+| `POST` | `/api/users/:id/revoke-sessions` | Revoke a user's sessions; permitted for that user or an administrator.                                                  |
+| `POST` | `/api/users/:id/password-reset`  | Issue a password-reset token; administrative access required.                                                           |
+| `POST` | `/api/invites`                   | Create a user invitation; administrative access required.                                                               |
+| `PUT`  | `/api/admin/settings`            | Set instance settings; administrative access required.                                                                  |
 
 ### Password resets
 

@@ -89,6 +89,51 @@ describe('AccountPage', () => {
     );
   });
 
+  it('lists all sessions for the account with the current session marked', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      if (input === '/api/me') {
+        return new Response(JSON.stringify(authenticatedUser), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (input === '/api/sessions') {
+        return new Response(
+          JSON.stringify([
+            {
+              id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              createdAt: '2026-09-21T00:00:00.000Z',
+              expiresAt: '2026-09-22T00:00:00.000Z',
+              revokedAt: null,
+              current: true,
+            },
+            {
+              id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              createdAt: '2026-09-20T00:00:00.000Z',
+              expiresAt: '2026-09-21T00:00:00.000Z',
+              revokedAt: '2026-09-20T12:00:00.000Z',
+              current: false,
+            },
+          ]),
+          { headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response('', { status: 500 });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/account']}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/account" element={<AccountPage />} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('This session')).toBeVisible();
+    expect(screen.getByText('Revoked')).toBeVisible();
+  });
+
   it('redirects a signed-out visitor to login', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 401 }));
 

@@ -86,7 +86,17 @@ export function HomePage() {
             Vault overview
           </p>
           <h1 className="text-3xl font-semibold tracking-tight">Your switches</h1>
-          <p className="text-sm text-[var(--color-muted-foreground)]">Signed in as {state.email}</p>
+          <p className="text-sm text-[var(--color-muted-foreground)]">
+            Signed in as {state.email}
+            {state.role === 'admin' ? (
+              <>
+                {' · '}
+                <Link to="/admin" className="font-medium underline underline-offset-4">
+                  Admin
+                </Link>
+              </>
+            ) : null}
+          </p>
         </div>
         <Link
           to="/switches/new"
@@ -94,11 +104,6 @@ export function HomePage() {
         >
           Create switch
         </Link>
-        {state.role === 'admin' ? (
-          <Link to="/admin" className="text-sm font-medium underline underline-offset-4">
-            Admin
-          </Link>
-        ) : null}
       </section>
       {state.switches.length === 0 ? (
         <Card>

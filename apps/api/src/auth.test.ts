@@ -119,6 +119,41 @@ describe('auth core T3.2', () => {
     expect(meBody.email).toBe(email);
   });
 
+  it('lists own sessions with the current session marked and no token material', async () => {
+    const email = 'sessions@example.com';
+    const pw = 'supersecure123';
+    await createUser(email, pw);
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/login',
+      payload: { email, password: pw },
+    });
+    expect(login.statusCode).toBe(200);
+    const cookie = extractSessionCookie(login);
+    expect(cookie).not.toBeNull();
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/sessions',
+      headers: { cookie: `__Host-session=${cookie}` },
+    });
+    expect(list.statusCode).toBe(200);
+    const sessions = JSON.parse(list.body) as {
+      id: string;
+      createdAt: string;
+      expiresAt: string;
+      revokedAt: string | null;
+      current: boolean;
+    }[];
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.current).toBe(true);
+    expect(sessions[0]?.revokedAt).toBeNull();
+    expect(list.body).not.toContain('token_hash');
+
+    const anon = await app.inject({ method: 'GET', url: '/api/sessions' });
+    expect(anon.statusCode).toBe(401);
+  });
+
   it('bad password and unknown email both return generic 401 same shape', async () => {
     const email = 'bob@example.com';
     const pw = 'supersecure123';

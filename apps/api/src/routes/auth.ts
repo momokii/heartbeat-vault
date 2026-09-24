@@ -205,6 +205,30 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
     return reply.status(200).send({ id: u.id, email: u.email, role: u.role });
   });
 
+  app.get('/api/sessions', { preHandler: requireAuth }, async (request, reply) => {
+    const u = request.user!;
+    const currentHash = (request as unknown as { sessionTokenHash: string }).sessionTokenHash;
+    const res = await pool.query<{
+      id: string;
+      created_at: string;
+      expires_at: string;
+      revoked_at: string | null;
+      token_hash: string;
+    }>(
+      `SELECT id, created_at, expires_at, revoked_at, token_hash FROM sessions WHERE user_id=$1 ORDER BY created_at DESC`,
+      [u.id],
+    );
+    return reply.status(200).send(
+      res.rows.map(row => ({
+        id: row.id,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        revokedAt: row.revoked_at,
+        current: row.token_hash === currentHash,
+      })),
+    );
+  });
+
   app.post('/api/sessions/revoke-all', { preHandler: requireAuth }, async (request, reply) => {
     const u = request.user!;
     await pool.query(
