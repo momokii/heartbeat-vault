@@ -61,9 +61,22 @@ export function NewSwitchForm({ values, state, onValuesChange, onSubmit }: NewSw
         </CardHeader>
         <CardContent>
           <form className="space-y-6" onSubmit={onSubmit} noValidate>
-            <Button type="button" variant="secondary" onClick={() => onValuesChange(exampleValues)}>
-              Fill with example values
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onValuesChange(exampleValues)}
+              >
+                Fill with example values
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onValuesChange(defaultSwitchFormValues)}
+              >
+                Reset all values
+              </Button>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="switch-title">Name</Label>
               <Input

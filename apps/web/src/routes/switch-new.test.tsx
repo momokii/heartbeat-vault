@@ -42,6 +42,22 @@ describe('NewSwitchPage', () => {
     expect(screen.getByLabelText('Run a delivery test')).toBeChecked();
   });
 
+  it('resets the guided form back to its defaults', () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fill with example values' }));
+    expect(screen.getByLabelText('Name')).toHaveValue('Family recovery plan');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset all values' }));
+
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    expect(screen.getByRole('radio', { name: /Release an encryption key/ })).toBeChecked();
+    expect(screen.getByLabelText('Heartbeat interval (hours)')).toHaveValue(168);
+    expect(screen.getByLabelText('Grace window (hours)')).toHaveValue(24);
+    expect(screen.getByRole('radio', { name: /Fail safe/ })).toBeChecked();
+    expect(screen.getByLabelText('Run a delivery test')).not.toBeChecked();
+  });
+
   it('toggles each field explanation from its accessible help button', () => {
     renderPage();
 
