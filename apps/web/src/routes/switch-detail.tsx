@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { FieldGuidance } from '@/components/ui/field-guidance';
 import { SwitchSetup } from '@/components/switches/switch-setup';
 import { HeartbeatCheckin } from '@/components/switches/heartbeat-checkin';
 import { TriggerConfiguration } from '@/components/switches/trigger-configuration';
@@ -166,6 +167,24 @@ export function SwitchDetailPage() {
           >
             {state.busy ? 'Updating…' : active ? 'Pause switch' : 'Arm switch'}
           </Button>
+          <FieldGuidance
+            field={active ? 'pausing this switch' : 'arming this switch'}
+            description={
+              active
+                ? 'Pausing stops the heartbeat deadline until the switch is armed again.'
+                : 'Arming requires an accepted recipient and a sealed payload. A fail_deadly switch also sends its required typed confirmation at arm time.'
+            }
+            example={
+              active
+                ? 'Pause a switch while you are changing its recipients.'
+                : 'Arm after recipient@example.com accepts the invitation and a payload is sealed.'
+            }
+            result={
+              active
+                ? 'No heartbeat deadline runs while the switch is paused.'
+                : 'The heartbeat deadline becomes active once all prerequisites are satisfied.'
+            }
+          />
           {!active && state.item.status !== 'released' ? (
             <p className="text-xs text-[var(--color-muted-foreground)]">
               Arming requires at least one accepted recipient and a sealed payload.

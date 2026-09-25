@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { FieldGuidance } from '@/components/ui/field-guidance';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient, ApiError } from '@/lib/api-client';
@@ -70,15 +71,24 @@ export function HeartbeatCheckin({
               maxLength={8}
               disabled={!active || busy}
             />
-            <p className="text-xs text-[var(--color-muted-foreground)]">
-              Leave blank unless this account uses TOTP verification.
-            </p>
+            <FieldGuidance
+              field="an authenticator code"
+              description="Enter a TOTP code only when this account has two-factor authentication enabled."
+              example="123456"
+              result="The server verifies the code before recording this check-in."
+            />
           </div>
           {message ? (
             <p role="status" className="text-sm text-[var(--color-muted-foreground)]">
               {message}
             </p>
           ) : null}
+          <FieldGuidance
+            field="checking in"
+            description="A check-in confirms the owner is active and resets the heartbeat deadline to now plus its interval."
+            example="Check in before a 7-day interval expires."
+            result="The next deadline moves forward; leave the code blank unless the account has TOTP."
+          />
           <Button type="submit" disabled={!active || busy}>
             {busy ? 'Recording check-in…' : 'Check in now'}
           </Button>

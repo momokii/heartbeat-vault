@@ -1,17 +1,10 @@
-import { useId, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+export { FieldGuidance } from '@/components/ui/field-guidance';
 
 export const releaseModes = ['asymmetric_key', 'direct_delivery'] as const;
 export const releasePolicies = ['fail_safe', 'fail_deadly'] as const;
 export type ReleaseMode = (typeof releaseModes)[number];
 export type ReleasePolicy = (typeof releasePolicies)[number];
-
-type FieldGuidanceProps = {
-  readonly field: string;
-  readonly description: string;
-  readonly example: string;
-  readonly result: string;
-};
 
 type ScheduleInput = {
   readonly now: Date;
@@ -48,42 +41,6 @@ export function calculatePreviewSchedule({
   const nextDeadline = new Date(now.getTime() + heartbeatIntervalHours * 60 * 60 * 1000);
   const releaseAt = new Date(nextDeadline.getTime() + graceWindowHours * 60 * 60 * 1000);
   return { nextDeadline, releaseAt };
-}
-
-export function FieldGuidance({ field, description, example, result }: FieldGuidanceProps) {
-  const [expanded, setExpanded] = useState(false);
-  const descriptionId = useId();
-
-  return (
-    <div className="space-y-1 text-xs text-[var(--color-muted-foreground)]">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        aria-controls={descriptionId}
-        onClick={() => setExpanded(current => !current)}
-        className="font-medium text-[var(--color-foreground)] underline decoration-[var(--color-border)] underline-offset-4 hover:decoration-[var(--color-primary)]"
-      >
-        What is {field}?
-      </button>
-      <div
-        id={descriptionId}
-        role="region"
-        aria-label={`${field} explanation`}
-        hidden={!expanded}
-        className="rounded-md border bg-[var(--color-secondary)] p-3 text-sm leading-6 text-[var(--color-foreground)]"
-      >
-        {description}
-      </div>
-      <p>
-        <span className="font-medium text-[var(--color-foreground)]">Example: </span>
-        {example}
-      </p>
-      <p>
-        <span className="font-medium text-[var(--color-foreground)]">Result: </span>
-        {result}
-      </p>
-    </div>
-  );
 }
 
 export function SwitchOutcomePreview({

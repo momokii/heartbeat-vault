@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { FieldGuidance } from '@/components/ui/field-guidance';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
@@ -107,6 +108,12 @@ export function SwitchSettings({
                 disabled={busy || item.status === 'released'}
                 required
               />
+              <FieldGuidance
+                field="the switch name"
+                description="This 1–200-character label identifies the switch in your dashboard."
+                example="Family recovery plan"
+                result="The new name is shown for this switch without changing its release behavior."
+              />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
@@ -121,6 +128,12 @@ export function SwitchSettings({
                   disabled={busy || item.status === 'released'}
                   required
                 />
+                <FieldGuidance
+                  field="the heartbeat interval"
+                  description="Choose 24–2160 hours between expected check-ins."
+                  example="168 hours (7 days)"
+                  result="The interval applies to future heartbeat deadlines."
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-grace">Grace window (hours)</Label>
@@ -133,6 +146,12 @@ export function SwitchSettings({
                   disabled={busy || item.status === 'released'}
                   required
                 />
+                <FieldGuidance
+                  field="the grace window"
+                  description="Choose at least 2 hours for the period after a missed deadline when the owner can still check in."
+                  example="24 hours (1 day)"
+                  result="The grace window applies to future heartbeat deadlines."
+                />
               </div>
             </div>
             <label className="flex gap-2 text-sm">
@@ -144,11 +163,23 @@ export function SwitchSettings({
               />{' '}
               Test deliveries without releasing a payload
             </label>
+            <FieldGuidance
+              field="a dry run"
+              description="Dry run marks deliveries as tests and never releases a real payload."
+              example="Enable it while reviewing a new delivery channel."
+              result="Future triggers send marked test deliveries instead of real payloads."
+            />
             {message ? (
               <p role="status" className="text-sm text-[var(--color-muted-foreground)]">
                 {message}
               </p>
             ) : null}
+            <FieldGuidance
+              field="saving these settings"
+              description="This action patches the name, interval, grace window, and dry-run choice together."
+              example="Save a 168-hour interval and a 24-hour grace window."
+              result="The new values apply to future heartbeat deadlines."
+            />
             <Button type="submit" disabled={busy || item.status === 'released'}>
               {busy ? 'Saving…' : 'Save settings'}
             </Button>
@@ -171,7 +202,19 @@ export function SwitchSettings({
                 name="confirmation"
                 disabled={busy || item.status === 'released'}
               />
+              <FieldGuidance
+                field="deleting this switch"
+                description="Deletion is permanent and requires this exact title. Released switches cannot be deleted."
+                example={`Type “${item.title}” exactly.`}
+                result="A matching title permanently deletes an unreleased switch."
+              />
             </div>
+            <FieldGuidance
+              field="the delete switch action"
+              description="This action deletes the switch only after the typed-title confirmation matches."
+              example={`Confirm with “${item.title}”.`}
+              result="The switch is permanently removed and the dashboard opens."
+            />
             <Button
               type="submit"
               variant="destructive"
