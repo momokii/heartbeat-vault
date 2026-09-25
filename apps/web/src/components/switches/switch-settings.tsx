@@ -203,11 +203,6 @@ export function SwitchSettings({
                 example={`Type “${item.title}” exactly.`}
               />
             </div>
-            <FieldGuidance
-              field="the delete switch action"
-              description="This action deletes the switch only after the typed-title confirmation matches."
-              example={`Confirm with “${item.title}”.`}
-            />
             <Button
               type="submit"
               variant="destructive"
