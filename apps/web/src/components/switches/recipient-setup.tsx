@@ -135,7 +135,13 @@ export function RecipientSetup({
             <FieldGuidance
               field="the delivery address"
               description="This is where the selected channel sends its release notice; the invitation must be accepted before arming."
-              example="recipient@example.com, https://hooks.example.com/heartbeat, or -1001234567890"
+              example={
+                channel === 'email'
+                  ? 'recipient@example.com'
+                  : channel === 'webhook'
+                    ? 'https://hooks.example.com/heartbeat'
+                    : '-1001234567890'
+              }
             />
           </div>
           <FieldGuidance

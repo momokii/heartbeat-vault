@@ -26,8 +26,16 @@ describe('SwitchSetup', () => {
     expect(screen.getByRole('region', { name: 'email delivery explanation' })).toHaveTextContent(
       'at-least-once',
     );
-  });
+    const emailHint = (_: unknown, element: unknown): boolean =>
+      (element as HTMLElement | null)?.textContent === 'Example: recipient@example.com';
+    expect(screen.getAllByText(emailHint)).toHaveLength(2);
 
+    fireEvent.click(screen.getByRole('radio', { name: 'Telegram' }));
+    const telegramHint = (_: unknown, element: unknown): boolean =>
+      (element as HTMLElement | null)?.textContent === 'Example: -1001234567890';
+    expect(screen.getAllByText(telegramHint)).toHaveLength(2);
+    expect(screen.getAllByText(emailHint)).toHaveLength(1);
+  });
   it('keeps recipient invitations on the existing POST contract', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
