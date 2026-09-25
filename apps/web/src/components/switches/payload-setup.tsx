@@ -69,9 +69,8 @@ export function PayloadSetup({
             />
             <FieldGuidance
               field="the release payload"
-              description="The server performs envelope encryption before storage. It is immutable after release, must never contain an invitation token, and is limited to 1 MB."
+              description="The server encrypts this before storage (max 1 MB, never an invitation token). A sealed payload satisfies one arming prerequisite."
               example="Instructions for accessing a separately stored encrypted archive."
-              result="A sealed payload satisfies one arming prerequisite and is stored encrypted."
             />
           </div>
           {state.message ? (
@@ -83,7 +82,6 @@ export function PayloadSetup({
             field="sealing the payload"
             description="This action sends the entered payload to the server for envelope encryption before storage."
             example="Seal a non-sensitive test message before relying on this switch."
-            result="The stored ciphertext is available for the configured release path."
           />
           <Button type="submit" disabled={disabled || state.busy}>
             {state.busy ? 'Sealing payload…' : 'Seal and store payload'}

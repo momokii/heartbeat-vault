@@ -179,11 +179,6 @@ export function SwitchDetailPage() {
                 ? 'Pause a switch while you are changing its recipients.'
                 : 'Arm after recipient@example.com accepts the invitation and a payload is sealed.'
             }
-            result={
-              active
-                ? 'No heartbeat deadline runs while the switch is paused.'
-                : 'The heartbeat deadline becomes active once all prerequisites are satisfied.'
-            }
           />
           {!active && state.item.status !== 'released' ? (
             <p className="text-xs text-[var(--color-muted-foreground)]">

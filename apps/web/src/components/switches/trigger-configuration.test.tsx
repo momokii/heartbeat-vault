@@ -13,13 +13,17 @@ function jsonResponse(triggerType: 'fixed_date' | 'quorum' | 'panic'): Response 
 describe('TriggerConfiguration', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it('renders a disclosure and result explanation for every trigger choice', () => {
+  it('renders a disclosure and short explanation for every trigger choice', () => {
     render(<TriggerConfiguration switchId={switchId} disabled={false} />);
 
-    expect(screen.getByRole('button', { name: 'What is the fixed-date trigger?' })).toBeVisible();
+    const fixedDateHelp = screen.getByRole('button', { name: 'What is the fixed-date trigger?' });
     expect(screen.getByRole('button', { name: 'What is the quorum trigger?' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'What is the panic trigger?' })).toBeVisible();
-    expect(screen.getByText(/Fires at that exact UTC time/i)).toBeVisible();
+
+    fireEvent.click(fixedDateHelp);
+    expect(
+      screen.getByRole('region', { name: 'the fixed-date trigger explanation' }),
+    ).toHaveTextContent('must be in the future');
   });
 
   it('keeps fixed-date trigger serialization unchanged', async () => {

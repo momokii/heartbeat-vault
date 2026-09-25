@@ -106,7 +106,6 @@ export function TriggerConfiguration({
               field="the fixed-date trigger"
               description="This trigger fires at an exact UTC time, so the selected date and time must be in the future."
               example="2030-01-02 03:04 in your local time."
-              result="Fires at that exact UTC time after the local entry is converted to ISO."
             />
             <label className="flex gap-2 text-sm">
               <input
@@ -122,7 +121,6 @@ export function TriggerConfiguration({
               field="the quorum trigger"
               description="Quorum is event-driven: release starts after t-of-n recipients record deceased votes. The threshold must be at least two."
               example="2 votes from 3 eligible recipients."
-              result="Release starts only when the required deceased-vote threshold is reached."
             />
             <label className="flex gap-2 text-sm">
               <input
@@ -138,7 +136,6 @@ export function TriggerConfiguration({
               field="the panic trigger"
               description="Panic starts release immediately, subject to the switch cancellation window, and requires acknowledgement."
               example="Use after a verified emergency requiring immediate release."
-              result="The release workflow starts now and remains cancellable during its window."
             />
           </fieldset>
           {kind === 'fixed_date' ? (
@@ -155,7 +152,6 @@ export function TriggerConfiguration({
                 field="the fire time"
                 description="This local date-and-time input is converted to an ISO timestamp before it is sent."
                 example="2030-01-02 03:04 local time."
-                result="The fixed-date trigger fires at the corresponding exact UTC time."
               />
             </div>
           ) : null}
@@ -176,7 +172,6 @@ export function TriggerConfiguration({
                 field="required recipient votes"
                 description="Choose the number of deceased votes needed to satisfy the event-driven quorum trigger."
                 example="2"
-                result="At least two recipient votes are required before release can start."
               />
             </div>
           ) : null}
@@ -196,7 +191,6 @@ export function TriggerConfiguration({
                 field="the panic acknowledgement"
                 description="This checkbox is the explicit acknowledgement required before configuring a panic trigger."
                 example="Check it only after reviewing the cancellation window."
-                result="The panic request can be submitted with its required confirmation."
               />
             </div>
           ) : null}
@@ -212,11 +206,6 @@ export function TriggerConfiguration({
               kind === 'panic'
                 ? 'Submit an acknowledged panic trigger.'
                 : 'Save a future fixed date.'
-            }
-            result={
-              kind === 'panic'
-                ? 'Release starts subject to cancellation.'
-                : 'The chosen trigger replaces the switch trigger configuration.'
             }
           />
           <Button

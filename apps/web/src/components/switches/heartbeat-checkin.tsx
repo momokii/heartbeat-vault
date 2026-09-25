@@ -75,7 +75,6 @@ export function HeartbeatCheckin({
               field="an authenticator code"
               description="Enter a TOTP code only when this account has two-factor authentication enabled."
               example="123456"
-              result="The server verifies the code before recording this check-in."
             />
           </div>
           {message ? (
@@ -87,7 +86,6 @@ export function HeartbeatCheckin({
             field="checking in"
             description="A check-in confirms the owner is active and resets the heartbeat deadline to now plus its interval."
             example="Check in before a 7-day interval expires."
-            result="The next deadline moves forward; leave the code blank unless the account has TOTP."
           />
           <Button type="submit" disabled={!active || busy}>
             {busy ? 'Recording check-in…' : 'Check in now'}

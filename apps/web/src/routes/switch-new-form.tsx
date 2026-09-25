@@ -91,7 +91,6 @@ export function NewSwitchForm({ values, state, onValuesChange, onSubmit }: NewSw
                 field="this name"
                 description="Name must be 1–200 characters. It is only a label for you."
                 example="Family recovery plan"
-                result="You can recognise this switch in your dashboard."
               />
             </div>
             <fieldset className="space-y-3">
@@ -128,13 +127,8 @@ export function NewSwitchForm({ values, state, onValuesChange, onSubmit }: NewSw
               </label>
               <FieldGuidance
                 field="release mode"
-                description="Asymmetric key means recipients receive the encryption key to unlock material they already hold; use it when the payload itself lives elsewhere. Direct delivery means the sealed message is delivered to recipients directly."
+                description="Asymmetric key releases only the encryption key for material recipients already hold. Direct delivery sends the sealed message itself."
                 example="Direct delivery"
-                result={
-                  values.mode === 'asymmetric_key'
-                    ? 'Recipients receive the key, not material stored elsewhere.'
-                    : 'Recipients receive the sealed message directly.'
-                }
               />
             </fieldset>
             <div className="grid gap-6 sm:grid-cols-2">
@@ -154,9 +148,8 @@ export function NewSwitchForm({ values, state, onValuesChange, onSubmit }: NewSw
                 />
                 <FieldGuidance
                   field="heartbeat interval"
-                  description="Choose 24–2160 hours. The default is 168 hours: how often the owner must check in. Each check-in resets the next deadline to now plus this interval."
+                  description="How often the owner must check in, in hours (24–2160)."
                   example="168 hours (7 days)"
-                  result={`The next deadline moves to ${values.heartbeatIntervalHours} hours after each check-in.`}
                 />
               </div>
               <div className="space-y-2">
@@ -174,9 +167,8 @@ export function NewSwitchForm({ values, state, onValuesChange, onSubmit }: NewSw
                 />
                 <FieldGuidance
                   field="grace window"
-                  description="Choose at least 2 hours. The default is 24 hours. After a missed deadline, reminders escalate and the owner can still check in to cancel; only after grace expires does release trigger."
+                  description="Hours after a missed deadline during which a check-in still cancels release (at least 2)."
                   example="24 hours (1 day)"
-                  result={`Release cannot trigger until ${values.graceWindowHours} hours after a missed deadline.`}
                 />
               </div>
             </div>
@@ -214,13 +206,8 @@ export function NewSwitchForm({ values, state, onValuesChange, onSubmit }: NewSw
               </label>
               <FieldGuidance
                 field="release policy"
-                description="Fail-safe is the default and holds delivery during database or clock uncertainty. Fail-deadly releases even when uncertain; it requires typed confirmation at arm time and carries a higher availability risk."
+                description="Fail-safe holds delivery during uncertainty; fail-deadly releases anyway and needs typed confirmation at arm."
                 example="Fail safe"
-                result={
-                  values.releasePolicy === 'fail_safe'
-                    ? 'Delivery pauses rather than risking a false release during uncertainty.'
-                    : 'Delivery prioritises release even when the service is uncertain.'
-                }
               />
             </fieldset>
             <div className="space-y-2">
@@ -237,11 +224,6 @@ export function NewSwitchForm({ values, state, onValuesChange, onSubmit }: NewSw
                 field="dry run"
                 description="Dry run means deliveries are marked as tests and no real payload is released."
                 example="Enabled while reviewing a new switch"
-                result={
-                  values.dryRun
-                    ? 'A trigger sends marked test deliveries without releasing a real payload.'
-                    : 'A trigger uses the configured release path.'
-                }
               />
             </div>
             {state.kind === 'error' ? (

@@ -87,7 +87,6 @@ export function RecipientSetup({
               field="email delivery"
               description="Email sends a release notice to the recipient's mailbox. Delivery is at-least-once and the provider receipt is stored."
               example="recipient@example.com"
-              result="The email provider may retry; its receipt is recorded for this release."
             />
             <label className="flex items-start gap-2 text-sm">
               <input
@@ -104,7 +103,6 @@ export function RecipientSetup({
               field="webhook delivery"
               description="Webhook sends a signed release notice to an HTTPS endpoint. Delivery is at-least-once and the endpoint receipt is stored."
               example="https://hooks.example.com/heartbeat"
-              result="The endpoint can receive a retry; its successful receipt is recorded."
             />
             <label className="flex items-start gap-2 text-sm">
               <input
@@ -121,7 +119,6 @@ export function RecipientSetup({
               field="telegram delivery"
               description="Telegram sends a release notice to a chat ID. Delivery is at-least-once and the Bot API receipt is stored."
               example="-1001234567890"
-              result="Telegram may retry delivery; its Bot API receipt is recorded."
             />
           </fieldset>
           <div className="space-y-2">
@@ -137,16 +134,14 @@ export function RecipientSetup({
             />
             <FieldGuidance
               field="the delivery address"
-              description="This is where the selected channel sends its release notice."
+              description="This is where the selected channel sends its release notice; the invitation must be accepted before arming."
               example="recipient@example.com, https://hooks.example.com/heartbeat, or -1001234567890"
-              result="The invitation is sent to this address and must be accepted before arming."
             />
           </div>
           <FieldGuidance
             field="a recipient invitation"
             description="An invitation asks a recipient to accept this switch and its delivery channel before it can be armed."
             example="Share the one-time invitation token with recipient@example.com through a secure channel."
-            result="An accepted invitation satisfies one arming prerequisite."
           />
           {state.message ? (
             <p role="status" className="text-sm text-[var(--color-muted-foreground)]">

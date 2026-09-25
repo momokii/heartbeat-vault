@@ -4,10 +4,9 @@ type FieldGuidanceProps = {
   readonly field: string;
   readonly description: string;
   readonly example: string;
-  readonly result: string;
 };
 
-export function FieldGuidance({ field, description, example, result }: FieldGuidanceProps) {
+export function FieldGuidance({ field, description, example }: FieldGuidanceProps) {
   const [expanded, setExpanded] = useState(false);
   const descriptionId = useId();
 
@@ -35,10 +34,6 @@ export function FieldGuidance({ field, description, example, result }: FieldGuid
       <p>
         <span className="font-medium text-[var(--color-foreground)]">Example: </span>
         {example}
-      </p>
-      <p>
-        <span className="font-medium text-[var(--color-foreground)]">Result: </span>
-        {result}
       </p>
     </div>
   );
