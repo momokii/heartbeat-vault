@@ -276,7 +276,8 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id.data,
         ip: request.ip,
         requestId: request.id,
-        details: { changes },
+        details:
+          Object.keys(changes).length > 0 ? { changes } : { changes, noEffectiveChanges: true },
       });
       await client.query('COMMIT');
     } catch (err) {

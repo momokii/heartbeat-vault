@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import { createAuthPreHandler } from '../lib/auth-middleware.js';
+import { sanitizeAuditDetails } from '../lib/audit.js';
 import { requireRole } from '../lib/roles.js';
 import {
   auditCategoryExpression,
@@ -35,7 +36,10 @@ type SerializedAuditRow = {
 
 function serializeDetails(details: unknown): Record<string, unknown> {
   if (details !== null && typeof details === 'object' && !Array.isArray(details)) {
-    return Object.fromEntries(Object.entries(details));
+    const sanitized = sanitizeAuditDetails(details);
+    if (sanitized !== null && typeof sanitized === 'object' && !Array.isArray(sanitized)) {
+      return sanitized as Record<string, unknown>;
+    }
   }
   return {};
 }

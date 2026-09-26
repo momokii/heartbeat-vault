@@ -5,7 +5,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { AUDIT_GENESIS, computeAuditHash, writeAudit } from './audit.js';
+import { AUDIT_GENESIS, computeAuditHash, sanitizeAuditDetails, writeAudit } from './audit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXED_TS = new Date('2026-09-26T12:34:56.789Z');
@@ -105,6 +105,55 @@ describe('audit chain v2', () => {
     const omittedHash = computeAuditHash(AUDIT_GENESIS, FIXED_TS, null, 'audit.test', 'target');
 
     expect(omittedHash.equals(expectedV2Hash('{}'))).toBe(true);
+  });
+
+  it('drops sensitive keys recursively while preserving safe operational facts', () => {
+    expect(
+      sanitizeAuditDetails({
+        outcome: 'success',
+        sessionsRevoked: true,
+        sessionToken: 'raw-token',
+        nested: { password: 'secret', channel: 'email', deep: { ipAddress: '1.2.3.4' } },
+        list: [{ tokenHash: 'abc' }, { method: 'totp' }],
+      }),
+    ).toEqual({
+      outcome: 'success',
+      sessionsRevoked: true,
+      nested: { channel: 'email', deep: {} },
+      list: [{}, { method: 'totp' }],
+    });
+  });
+
+  it('persists sanitized details and hashes the sanitized bytes', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await writeAudit(client, {
+        action: 'audit.test',
+        target: 'target',
+        details: { outcome: 'success', password: 'must-not-persist' },
+      });
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    const row = await pool.query<{
+      readonly details: Record<string, unknown>;
+      readonly hash: Buffer;
+      readonly prev_hash: Buffer | null;
+      readonly ts: Date;
+    }>('SELECT details, hash, prev_hash, ts FROM audit_log');
+    expect(row.rows[0]!.details).toEqual({ outcome: 'success' });
+    const recomputed = computeAuditHash(
+      row.rows[0]!.prev_hash ?? AUDIT_GENESIS,
+      row.rows[0]!.ts,
+      null,
+      'audit.test',
+      'target',
+      { outcome: 'success' },
+    );
+    expect(recomputed.equals(row.rows[0]!.hash)).toBe(true);
   });
 
   it('invalidates a persisted entry when its details are tampered', async () => {

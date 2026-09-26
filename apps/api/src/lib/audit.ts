@@ -19,6 +19,28 @@ export type AuditParams = {
 const GENESIS = Buffer.alloc(32, 0);
 const AUDIT_CHAIN_LOCK = 1_847_068_217;
 
+/**
+ * Centrally enforced audit-detail redaction. Any key naming credentials,
+ * tokens, secrets, addresses, locators, payload material, or request
+ * metadata is dropped recursively before persistence and before API
+ * serialization, so caller convention alone never guards sensitive data.
+ */
+const SENSITIVE_DETAIL_KEY =
+  /token|password|passwd|secret|hash|private|address|url|uri|endpoint|payload|cipher|envelope|dek|kek|otp|totp|cookie|session_token|request|seed|mnemonic|plaintext|signature|webhook|email|_ip$|^ip$|ip_address/i;
+
+export function sanitizeAuditDetails(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeAuditDetails);
+  if (value !== null && typeof value === 'object') {
+    const clean: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (SENSITIVE_DETAIL_KEY.test(key)) continue;
+      clean[key] = sanitizeAuditDetails(entry);
+    }
+    return clean;
+  }
+  return value;
+}
+
 function canonicalizeDetails(details: Record<string, unknown>): string {
   const values: unknown[] = [details];
   while (values.length > 0) {
@@ -48,6 +70,12 @@ export async function writeAudit(
     details = {},
   } = params;
 
+  const sanitized = sanitizeAuditDetails(details);
+  if (sanitized === null || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
+    throw new TypeError('audit details must be a JSON object');
+  }
+  const cleanDetails = sanitized as Record<string, unknown>;
+
   await client.query('SELECT pg_advisory_xact_lock($1)', [AUDIT_CHAIN_LOCK]);
   const prevRes = await client.query<{ hash: Buffer }>(
     `SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1`,
@@ -55,12 +83,12 @@ export async function writeAudit(
   const prevHash = prevRes.rows[0]?.hash ?? GENESIS;
 
   const ts = new Date();
-  const hash = computeAuditHash(prevHash, ts, actorId, action, target, details);
+  const hash = computeAuditHash(prevHash, ts, actorId, action, target, cleanDetails);
 
   const inserted = await client.query<{ id: number }>(
     `INSERT INTO audit_log (ts, actor_id, action, target, ip, request_id, details, prev_hash, hash)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-    [ts, actorId, action, target, ip, requestId, details, prevHash, hash],
+    [ts, actorId, action, target, ip, requestId, cleanDetails, prevHash, hash],
   );
 
   return { id: inserted.rows[0]!.id, hash, prevHash };

@@ -423,6 +423,35 @@ describe('switches CRUD', () => {
     ).toMatchObject({ rows: [{ title: 'Other title' }] });
   });
 
+  it('PATCH with no effective changes marks the audit row explicitly', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    const detail = JSON.parse(
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/switches/${switchId}`,
+          headers: authCookie(ownerCookie),
+        })
+      ).body,
+    ) as { title: string; heartbeatIntervalHours: number; graceWindowHours: number };
+    const noop = await app.inject({
+      method: 'PATCH',
+      url: `/api/switches/${switchId}`,
+      headers: authCookie(ownerCookie),
+      payload: {
+        title: detail.title,
+        heartbeatIntervalHours: detail.heartbeatIntervalHours,
+        graceWindowHours: detail.graceWindowHours,
+      },
+    });
+    expect(noop.statusCode).toBe(200);
+    const audit = await pool.query<{ details: Record<string, unknown> }>(
+      `SELECT details FROM audit_log WHERE action='switch_updated' AND target=$1 ORDER BY id DESC LIMIT 1`,
+      [switchId],
+    );
+    expect(audit.rows[0]!.details).toEqual({ changes: {}, noEffectiveChanges: true });
+  });
+
   it('DELETE removes a non-released switch; 409 once released', async () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     const del = await app.inject({

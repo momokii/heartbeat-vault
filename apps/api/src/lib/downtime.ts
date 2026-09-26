@@ -77,7 +77,11 @@ export async function recoverFromOutage(
         [now, ids],
       );
       for (const id of ids) {
-        await writeAudit(client, { action: 'downtime_recovery', target: id, details: {} });
+        await writeAudit(client, {
+          action: 'downtime_recovery',
+          target: id,
+          details: { outageGapMs: gapMs, affectedSwitches: ids.length },
+        });
       }
     }
     await client.query('COMMIT');

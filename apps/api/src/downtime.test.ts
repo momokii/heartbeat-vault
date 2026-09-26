@@ -119,7 +119,7 @@ describe('recoverFromOutage', () => {
     expect(jobs.rows[0]!.run_at.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
-  it('writes downtime_recovery through the normal v2 audit chain with empty details', async () => {
+  it('writes downtime_recovery through the normal v2 audit chain with outage details', async () => {
     const sid = await createActiveSwitch(3 * 3600, 7200);
     await seedHeartbeatTick(5 * 3600_000);
 
@@ -139,7 +139,7 @@ describe('recoverFromOutage', () => {
       [sid],
     );
     const row = audit.rows[0]!;
-    expect(row.details).toEqual({});
+    expect(row.details).toEqual({ outageGapMs: expect.any(Number), affectedSwitches: 1 });
     expect(
       computeAuditHash(
         row.prev_hash ?? AUDIT_GENESIS,
