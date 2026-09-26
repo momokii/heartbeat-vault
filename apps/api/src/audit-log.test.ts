@@ -9,6 +9,7 @@ import { buildServer } from './server.js';
 import { resetRateLimitForTests } from './lib/rate-limit.js';
 import { parseAuditPage } from './audit-log.test-support.js';
 
+// allow: SIZE_OK — one Testcontainers lifecycle keeps the audit API contract deterministic.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const POSTGRES_IMAGE = 'postgres:17-alpine';
 
@@ -71,11 +72,19 @@ async function insertAudit(input: {
   readonly actorId?: string | null;
   readonly action: string;
   readonly target?: string | null;
+  readonly details?: Record<string, unknown> | null;
+  readonly timestamp?: string;
 }): Promise<number> {
   const result = await pool.query<{ id: number }>(
-    `INSERT INTO audit_log (actor_id, action, target, ip, request_id, prev_hash, hash)
-     VALUES ($1,$2,$3,'192.0.2.1','request-secret',decode('00', 'hex'),decode('01', 'hex')) RETURNING id`,
-    [input.actorId ?? null, input.action, input.target ?? null],
+    `INSERT INTO audit_log (ts, actor_id, action, target, ip, request_id, details, prev_hash, hash)
+     VALUES (COALESCE($1::timestamptz, clock_timestamp()),$2,$3,$4,'192.0.2.1','request-secret',$5,decode('00', 'hex'),decode('01', 'hex')) RETURNING id`,
+    [
+      input.timestamp ?? null,
+      input.actorId ?? null,
+      input.action,
+      input.target ?? null,
+      input.details === undefined ? {} : input.details,
+    ],
   );
   const id = result.rows[0]?.id;
   if (id === undefined) throw new Error('Expected audit ID');
@@ -146,6 +155,8 @@ describe('audit read APIs', () => {
       actorEmail: 'owner@example.com',
       action: 'switch_armed',
       target: switchId,
+      category: 'switch',
+      details: {},
     });
     expect(ownerResponse.body).not.toContain('192.0.2.1');
     expect(ownerResponse.body).not.toContain('request-secret');
@@ -269,5 +280,257 @@ describe('audit read APIs', () => {
     });
     expect(badQuery).toMatchObject({ statusCode: 400, json: expect.any(Function) });
     expect(badQuery.json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it('derives categories at read time and filters the global audit page by category', async () => {
+    // Given
+    const admin = await createUser('admin@example.com', 'admin');
+    const categoryActions = [
+      ['auth_login', 'auth'],
+      ['switch_armed', 'switch'],
+      ['account_password_changed', 'account'],
+      ['admin_settings_updated', 'admin'],
+      ['invite_created', 'invite'],
+      ['2fa_totp_enabled', '2fa'],
+      ['trigger_panicked', 'trigger'],
+      ['quorum_vote_recorded', 'trigger'],
+      ['heartbeat_checked_in', 'heartbeat'],
+      ['delivery_succeeded', 'delivery'],
+      ['unclassified_event', 'system'],
+    ] as const;
+    for (const [action] of categoryActions) await insertAudit({ action });
+
+    // When
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log?category=trigger',
+      headers: { cookie: admin.cookie },
+    });
+    const derivations = await Promise.all(
+      categoryActions.map(async ([action, category]) => {
+        const itemResponse = await app.inject({
+          method: 'GET',
+          url: `/api/audit-log?action=${action}`,
+          headers: { cookie: admin.cookie },
+        });
+        return { category, item: parseAuditPage(itemResponse).items[0] };
+      }),
+    );
+
+    // Then
+    expect(response.statusCode).toBe(200);
+    expect(parseAuditPage(response).items.map(item => [item.action, item.category])).toEqual([
+      ['quorum_vote_recorded', 'trigger'],
+      ['trigger_panicked', 'trigger'],
+    ]);
+    expect(derivations.map(({ category, item }) => item?.category === category)).toEqual(
+      categoryActions.map(() => true),
+    );
+  });
+
+  it('applies inclusive UTC date filters and rejects invalid or reversed audit ranges', async () => {
+    // Given
+    const admin = await createUser('admin@example.com', 'admin');
+    const from = '2026-09-01T00:00:00.000Z';
+    const to = '2026-09-01T01:00:00.000Z';
+    const firstId = await insertAudit({ action: 'auth_first', timestamp: from });
+    const lastId = await insertAudit({ action: 'auth_last', timestamp: to });
+    await insertAudit({ action: 'auth_after', timestamp: '2026-09-01T01:00:00.001Z' });
+
+    // When
+    const ranged = await app.inject({
+      method: 'GET',
+      url: `/api/audit-log?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      headers: { cookie: admin.cookie },
+    });
+    const invalid = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log?from=not-a-date',
+      headers: { cookie: admin.cookie },
+    });
+    const reversed = await app.inject({
+      method: 'GET',
+      url: `/api/audit-log?from=${encodeURIComponent(to)}&to=${encodeURIComponent(from)}`,
+      headers: { cookie: admin.cookie },
+    });
+
+    // Then
+    expect(parseAuditPage(ranged).items.map(item => item.id)).toEqual([lastId, firstId]);
+    expect(invalid.json()).toEqual({ error: 'invalid_request' });
+    expect(reversed.json()).toEqual({ error: 'invalid_request' });
+  });
+
+  it('composes category and date filters with scoped switch history', async () => {
+    // Given
+    const owner = await createUser('owner@example.com');
+    const switchId = await createSwitch(owner.id);
+    const from = '2026-09-01T00:00:00.000Z';
+    const to = '2026-09-01T01:00:00.000Z';
+    const matchingId = await insertAudit({
+      actorId: owner.id,
+      action: 'switch_armed',
+      target: switchId,
+      timestamp: from,
+    });
+    await insertAudit({
+      actorId: owner.id,
+      action: 'switch_paused',
+      target: switchId,
+      timestamp: '2026-09-01T01:00:00.001Z',
+    });
+    await insertAudit({
+      actorId: owner.id,
+      action: 'auth_login',
+      target: switchId,
+      timestamp: from,
+    });
+
+    // When
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/switches/${switchId}/audit?category=switch&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      headers: { cookie: owner.cookie },
+    });
+
+    // Then
+    expect(parseAuditPage(response).items.map(item => item.id)).toEqual([matchingId]);
+  });
+
+  it('returns details as an object and normalizes legacy null details', async () => {
+    // Given
+    const admin = await createUser('admin@example.com', 'admin');
+    await pool.query('ALTER TABLE audit_log ALTER COLUMN details DROP NOT NULL');
+    const legacyId = await insertAudit({ action: 'legacy_event', details: null });
+    const detailedId = await insertAudit({
+      action: 'admin_settings_updated',
+      details: { setting: 'openRegistration', enabled: true },
+    });
+
+    // When
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log?action=admin_settings_updated',
+      headers: { cookie: admin.cookie },
+    });
+    const legacyResponse = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log?action=legacy_event',
+      headers: { cookie: admin.cookie },
+    });
+
+    // Then
+    expect(parseAuditPage(response).items[0]).toMatchObject({
+      id: detailedId,
+      category: 'admin',
+      details: { setting: 'openRegistration', enabled: true },
+    });
+    expect(parseAuditPage(legacyResponse).items[0]).toMatchObject({ id: legacyId, details: {} });
+  });
+
+  it('exports filtered audit JSON for administrators with safe download headers', async () => {
+    // Given
+    const admin = await createUser('admin@example.com', 'admin');
+    const user = await createUser('member@example.com');
+    const matchingId = await insertAudit({
+      actorId: user.id,
+      action: 'switch_armed',
+      details: { source: 'test' },
+    });
+    await insertAudit({ actorId: user.id, action: 'auth_login' });
+
+    // When
+    const anonymous = await app.inject({ method: 'GET', url: '/api/audit-log/export?format=json' });
+    const forbidden = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log/export?format=json',
+      headers: { cookie: user.cookie },
+    });
+    const exported = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log/export?format=json&category=switch',
+      headers: { cookie: admin.cookie },
+    });
+
+    // Then
+    expect(anonymous.json()).toEqual({ error: 'unauthorized' });
+    expect(forbidden.json()).toEqual({ error: 'forbidden' });
+    expect(exported.headers['content-type']).toContain('application/json');
+    expect(exported.headers['content-disposition']).toBe('attachment; filename="audit-log.json"');
+    expect(exported.headers['cache-control']).toBe('no-store');
+    expect(exported.headers['x-content-type-options']).toBe('nosniff');
+    expect(exported.json()).toEqual({
+      items: [
+        expect.objectContaining({
+          id: matchingId,
+          category: 'switch',
+          details: { source: 'test' },
+        }),
+      ],
+    });
+    expect(exported.body).not.toContain('192.0.2.1');
+    expect(exported.body).not.toContain('request-secret');
+  });
+
+  it('exports RFC4180 CSV without spreadsheet formula interpretation and normalizes null details', async () => {
+    // Given
+    const admin = await createUser('admin@example.com', 'admin');
+    const actor = await createUser('+formula@example.com');
+    const auditId = await insertAudit({
+      actorId: actor.id,
+      action: '=danger,"quoted"',
+      target: '\tformula',
+      details: null,
+    });
+
+    // When
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log/export?format=csv',
+      headers: { cookie: admin.cookie },
+    });
+
+    // Then
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/csv');
+    expect(response.headers['content-disposition']).toBe('attachment; filename="audit-log.csv"');
+    expect(response.body).toContain(
+      '"id","timestamp","category","actorId","actorEmail","action","target","details"\r\n',
+    );
+    expect(response.body).toContain(`"${auditId}"`);
+    expect(response.body).toContain('"\'+formula@example.com"');
+    expect(response.body).toContain('"\'=danger,""quoted"""');
+    expect(response.body).toContain('"\'\tformula"');
+    expect(response.body).toContain('"{}"');
+  });
+
+  it('exports at most ten thousand filtered rows', async () => {
+    // Given
+    const admin = await createUser('admin@example.com', 'admin');
+    await pool.query(`
+      INSERT INTO audit_log (action, details, prev_hash, hash)
+      SELECT 'delivery_exportable', '{}'::jsonb, decode('00', 'hex'), decode('01', 'hex')
+      FROM generate_series(1, 10000)`);
+
+    // When
+    const withinLimit = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log/export?format=json&category=delivery',
+      headers: { cookie: admin.cookie },
+    });
+    await pool.query(
+      `INSERT INTO audit_log (action, details, prev_hash, hash)
+       VALUES ('delivery_exportable', '{}'::jsonb, decode('00', 'hex'), decode('01', 'hex'))`,
+    );
+    const overLimit = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log/export?format=json&category=delivery',
+      headers: { cookie: admin.cookie },
+    });
+
+    // Then
+    expect(withinLimit.statusCode).toBe(200);
+    expect(withinLimit.json().items).toHaveLength(10_000);
+    expect(overLimit.statusCode).toBe(400);
+    expect(overLimit.json()).toEqual({ error: 'export_limit_exceeded' });
   });
 });

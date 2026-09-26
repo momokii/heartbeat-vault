@@ -3,13 +3,13 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import { createAuthPreHandler } from '../lib/auth-middleware.js';
 import { requireRole } from '../lib/roles.js';
-import { auditPaginationSchema } from '../lib/audit-pagination.js';
+import {
+  auditCategoryExpression,
+  auditExportQuerySchema,
+  auditReadQuerySchema,
+  buildAuditPredicate,
+} from '../lib/audit-pagination.js';
 import { loadSwitch } from './switches.js';
-
-const auditLogQuerySchema = auditPaginationSchema.extend({
-  action: z.string().min(1).max(100).optional(),
-  q: z.string().trim().min(1).max(200).optional(),
-});
 
 type AuditRow = {
   readonly id: number;
@@ -18,9 +18,29 @@ type AuditRow = {
   readonly actorEmail: string | null;
   readonly action: string;
   readonly target: string | null;
+  readonly category: string;
+  readonly details: unknown;
 };
 
-function serializeAuditRow(row: AuditRow) {
+type SerializedAuditRow = {
+  readonly id: number;
+  readonly timestamp: string;
+  readonly actorId: string | null;
+  readonly actorEmail: string | null;
+  readonly action: string;
+  readonly target: string | null;
+  readonly category: string;
+  readonly details: Record<string, unknown>;
+};
+
+function serializeDetails(details: unknown): Record<string, unknown> {
+  if (details !== null && typeof details === 'object' && !Array.isArray(details)) {
+    return Object.fromEntries(Object.entries(details));
+  }
+  return {};
+}
+
+function serializeAuditRow(row: AuditRow): SerializedAuditRow {
   return {
     id: row.id,
     timestamp: row.timestamp.toISOString(),
@@ -28,7 +48,47 @@ function serializeAuditRow(row: AuditRow) {
     actorEmail: row.actorEmail,
     action: row.action,
     target: row.target,
+    category: row.category,
+    details: serializeDetails(row.details),
   };
+}
+
+const auditSelect = `SELECT a.id, a.ts AS "timestamp", a.actor_id AS "actorId", u.email AS "actorEmail", a.action, a.target,
+  ${auditCategoryExpression} AS "category", COALESCE(a.details, '{}'::jsonb) AS "details"
+FROM audit_log a
+LEFT JOIN users u ON u.id = a.actor_id`;
+
+function quoteCsvCell(value: string): string {
+  const safeValue = /^[=+\-@\t\r\n]/.test(value) ? `'${value}` : value;
+  return `"${safeValue.replaceAll('"', '""')}"`;
+}
+
+function buildAuditCsv(items: readonly SerializedAuditRow[]): string {
+  const header = [
+    'id',
+    'timestamp',
+    'category',
+    'actorId',
+    'actorEmail',
+    'action',
+    'target',
+    'details',
+  ];
+  const lines = items.map(item =>
+    [
+      String(item.id),
+      item.timestamp,
+      item.category,
+      item.actorId ?? '',
+      item.actorEmail ?? '',
+      item.action,
+      item.target ?? '',
+      JSON.stringify(item.details),
+    ]
+      .map(quoteCsvCell)
+      .join(','),
+  );
+  return `${header.map(quoteCsvCell).join(',')}\r\n${lines.join('\r\n')}\r\n`;
 }
 
 export async function registerAuditLogRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
@@ -38,42 +98,59 @@ export async function registerAuditLogRoutes(app: FastifyInstance, pool: Pool): 
     '/api/audit-log',
     { preHandler: [requireAuth, requireRole('admin')] },
     async (request, reply) => {
-      const parsed = auditLogQuerySchema.safeParse(request.query);
+      const parsed = auditReadQuerySchema.safeParse(request.query);
       if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
 
-      const { beforeId, limit, action, q } = parsed.data;
-      const parameters: (number | string)[] = [];
-      const clauses: string[] = [];
-      if (beforeId !== undefined) {
-        parameters.push(beforeId);
-        clauses.push(`a.id < $${parameters.length}`);
-      }
-      if (action !== undefined) {
-        parameters.push(action);
-        clauses.push(`a.action = $${parameters.length}`);
-      }
-      if (q !== undefined) {
-        parameters.push(`%${q}%`);
-        clauses.push(
-          `(a.action ILIKE $${parameters.length} OR a.target ILIKE $${parameters.length} OR u.email ILIKE $${parameters.length})`,
-        );
-      }
-      parameters.push(limit);
-      const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+      const { limit } = parsed.data;
+      const predicate = buildAuditPredicate(parsed.data);
       const result = await pool.query<AuditRow>(
-        `SELECT a.id, a.ts AS "timestamp", a.actor_id AS "actorId", u.email AS "actorEmail", a.action, a.target
-       FROM audit_log a
-       LEFT JOIN users u ON u.id = a.actor_id
-       ${where}
+        `${auditSelect}
+        ${predicate.where}
        ORDER BY a.id DESC
-       LIMIT $${parameters.length}`,
-        parameters,
+       LIMIT $${predicate.parameters.length + 1}`,
+        [...predicate.parameters, limit],
       );
       const items = result.rows.map(serializeAuditRow);
       return reply.status(200).send({
         items,
         nextBeforeId: items.length === limit ? (items.at(-1)?.id ?? null) : null,
       });
+    },
+  );
+
+  app.get(
+    '/api/audit-log/export',
+    { preHandler: [requireAuth, requireRole('admin')] },
+    async (request, reply) => {
+      const parsed = auditExportQuerySchema.safeParse(request.query);
+      if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
+
+      const predicate = buildAuditPredicate(parsed.data);
+      const result = await pool.query<AuditRow>(
+        `${auditSelect}
+        ${predicate.where}
+        ORDER BY a.id DESC
+        LIMIT $${predicate.parameters.length + 1}`,
+        [...predicate.parameters, 10_001],
+      );
+      if (result.rows.length > 10_000) {
+        return reply.status(400).send({ error: 'export_limit_exceeded' });
+      }
+
+      const items = result.rows.map(serializeAuditRow);
+      const headers = reply
+        .header('cache-control', 'no-store')
+        .header('x-content-type-options', 'nosniff');
+      if (parsed.data.format === 'json') {
+        return headers
+          .header('content-disposition', 'attachment; filename="audit-log.json"')
+          .type('application/json; charset=utf-8')
+          .send({ items });
+      }
+      return headers
+        .header('content-disposition', 'attachment; filename="audit-log.csv"')
+        .type('text/csv; charset=utf-8')
+        .send(buildAuditCsv(items));
     },
   );
 }
@@ -87,21 +164,21 @@ export async function registerSwitchAuditRoutes(app: FastifyInstance, pool: Pool
       .uuid()
       .safeParse((request.params as Record<string, string>)['id']);
     if (!id.success) return reply.status(404).send({ error: 'not_found' });
-    const parsed = auditPaginationSchema.safeParse(request.query);
+    const parsed = auditReadQuerySchema.safeParse(request.query);
     if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
-    const user = request.user!;
+    const user = request.user;
+    if (user === undefined) return reply.status(401).send({ error: 'unauthorized' });
     const switchRow = await loadSwitch(pool, id.data, user.id, user.role === 'admin');
     if (!switchRow) return reply.status(404).send({ error: 'not_found' });
 
-    const { beforeId, limit } = parsed.data;
+    const { limit } = parsed.data;
+    const predicate = buildAuditPredicate(parsed.data, id.data);
     const result = await pool.query<AuditRow>(
-      `SELECT a.id, a.ts AS "timestamp", a.actor_id AS "actorId", u.email AS "actorEmail", a.action, a.target
-       FROM audit_log a
-       LEFT JOIN users u ON u.id = a.actor_id
-       WHERE a.target = $1 AND ($2::int IS NULL OR a.id < $2)
+      `${auditSelect}
+       ${predicate.where}
        ORDER BY a.id DESC
-       LIMIT $3`,
-      [id.data, beforeId ?? null, limit],
+       LIMIT $${predicate.parameters.length + 1}`,
+      [...predicate.parameters, limit],
     );
     const items = result.rows.map(serializeAuditRow);
     return reply.status(200).send({

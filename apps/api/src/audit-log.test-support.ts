@@ -7,6 +7,19 @@ const auditItemSchema = z.object({
   actorEmail: z.string().email().nullable(),
   action: z.string(),
   target: z.string().nullable(),
+  category: z.enum([
+    'auth',
+    'switch',
+    'account',
+    'admin',
+    'invite',
+    '2fa',
+    'trigger',
+    'heartbeat',
+    'delivery',
+    'system',
+  ]),
+  details: z.record(z.string(), z.unknown()),
 });
 const auditPageSchema = z.object({
   items: z.array(auditItemSchema),
