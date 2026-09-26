@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { Pool } from 'pg';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -9,6 +9,24 @@ import { generate as generateTotp } from 'otplib';
 import { buildServer } from './server.js';
 import { resetRateLimitForTests } from './lib/rate-limit.js';
 import type { FastifyInstance } from 'fastify';
+
+const auditFailures = vi.hoisted(() => ({ heartbeatCheckin: false }));
+
+vi.mock('./lib/audit.js', async importOriginal => {
+  const actual = await importOriginal<typeof import('./lib/audit.js')>();
+  return {
+    ...actual,
+    writeAudit: async (
+      client: Parameters<typeof actual.writeAudit>[0],
+      entry: Parameters<typeof actual.writeAudit>[1],
+    ) => {
+      if (entry.action === 'heartbeat_checkin' && auditFailures.heartbeatCheckin) {
+        throw new Error('injected heartbeat_checkin audit failure');
+      }
+      return actual.writeAudit(client, entry);
+    },
+  };
+});
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const POSTGRES_IMAGE = 'postgres:17-alpine';
@@ -322,6 +340,78 @@ describe('manual check-in', () => {
     expect(ok.statusCode).toBe(200);
     void ownerCookie;
   }, 90_000);
+
+  it('rolls the TOTP counter back when the check-in transaction fails', async () => {
+    const ownerId = await createUser('totp-rollback@example.com', 'password-12-chars');
+    const cookie = await loginAs('totp-rollback@example.com', 'password-12-chars');
+    const secret = await enableTotp(ownerId);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/switches',
+      headers: authCookie(cookie),
+      payload: {
+        title: 'hb-rollback',
+        mode: 'direct_delivery',
+        heartbeatIntervalHours: 24,
+        graceWindowHours: 2,
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const switchId = (JSON.parse(created.body) as { id: string }).id;
+    const recip = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/recipients`,
+      headers: authCookie(cookie),
+      payload: { channel: 'email', address: 'r@example.com' },
+    });
+    const { inviteToken } = JSON.parse(recip.body) as { inviteToken: string };
+    await app.inject({
+      method: 'POST',
+      url: '/api/recipients/accept',
+      payload: { token: inviteToken },
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/payload`,
+      headers: authCookie(cookie),
+      payload: { plaintext: 'p' },
+    });
+    const arm = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/arm`,
+      headers: authCookie(cookie),
+      payload: { confirm: true },
+    });
+    expect(arm.statusCode).toBe(200);
+    resetRateLimitForTests();
+    auditFailures.heartbeatCheckin = true;
+    let statusCode = 0;
+    try {
+      const code = await generateTotp({ secret });
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/check-in`,
+        headers: authCookie(cookie),
+        payload: { totpCode: code },
+      });
+      statusCode = res.statusCode;
+    } finally {
+      auditFailures.heartbeatCheckin = false;
+    }
+    expect(statusCode).toBe(500);
+    const counter = await pool.query<{ totp_last_counter: string }>(
+      `SELECT totp_last_counter FROM users WHERE id=$1`,
+      [ownerId],
+    );
+    expect(counter.rows[0]!.totp_last_counter).toBe('0');
+    const heartbeats = await pool.query(`SELECT 1 FROM heartbeats WHERE switch_id=$1`, [switchId]);
+    expect(heartbeats.rows).toHaveLength(0);
+    const auditRows = await pool.query(
+      `SELECT 1 FROM audit_log WHERE action='heartbeat_checkin' AND target=$1`,
+      [switchId],
+    );
+    expect(auditRows.rows).toHaveLength(0);
+  });
 });
 
 describe('token check-in', () => {

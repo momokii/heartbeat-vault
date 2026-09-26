@@ -1,16 +1,36 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { Pool } from 'pg';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
+import { generate as generateTotp } from 'otplib';
 import { buildServer } from './server.js';
 import { resetRateLimitForTests } from './lib/rate-limit.js';
 import { materializeDueTriggers, claimJob, processJob } from './lib/trigger-engine.js';
 import type { FastifyInstance } from 'fastify';
 
+const auditFailures = vi.hoisted(() => ({ triggerCancel: false }));
+
+vi.mock('./lib/audit.js', async importOriginal => {
+  const actual = await importOriginal<typeof import('./lib/audit.js')>();
+  return {
+    ...actual,
+    writeAudit: async (
+      client: Parameters<typeof actual.writeAudit>[0],
+      entry: Parameters<typeof actual.writeAudit>[1],
+    ) => {
+      if (entry.action === 'trigger_cancelled' && auditFailures.triggerCancel) {
+        throw new Error('injected trigger_cancelled audit failure');
+      }
+      return actual.writeAudit(client, entry);
+    },
+  };
+});
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const TEST_MASTER_KEY = randomBytes(32).toString('hex');
 
 let container: StartedPostgreSqlContainer;
 let pool: Pool;
@@ -55,6 +75,40 @@ async function createUserAndLogin(email: string): Promise<{ userId: string; cook
   });
   expect(login.statusCode).toBe(200);
   return { userId: u.rows[0]!.id as string, cookie: extractSessionCookie(login)! };
+}
+
+async function enableTotp(userId: string): Promise<string> {
+  const secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+  const { encrypt } = await import('@heartbeat-vault/crypto');
+  const envelope = encrypt(
+    new TextEncoder().encode(secret),
+    { tenantId: 'default', switchId: 'totp' },
+    new Uint8Array(Buffer.from(TEST_MASTER_KEY, 'hex')),
+    'totp',
+    1,
+  );
+  const blob = Buffer.from(
+    JSON.stringify({
+      version: envelope.version,
+      kid: envelope.kid,
+      kekVersion: envelope.kekVersion,
+      wrappedDEK: {
+        nonce: Buffer.from(envelope.wrappedDEK.nonce).toString('base64'),
+        ct: Buffer.from(envelope.wrappedDEK.ct).toString('base64'),
+      },
+      payload: {
+        nonce: Buffer.from(envelope.payload.nonce).toString('base64'),
+        ct: Buffer.from(envelope.payload.ct).toString('base64'),
+        tag: Buffer.from(envelope.payload.tag).toString('base64'),
+      },
+    }),
+    'utf8',
+  );
+  await pool.query(
+    `UPDATE users SET totp_secret_encrypted=$1, totp_verified_at=clock_timestamp(), totp_last_counter=0 WHERE id=$2`,
+    [blob, userId],
+  );
+  return secret;
 }
 
 /** Active armed switch, deadline far in the future (heartbeat ladder never fires). */
@@ -113,6 +167,7 @@ beforeAll(async () => {
   container = await new PostgreSqlContainer('postgres:17-alpine').start();
   pool = new Pool({ connectionString: container.getConnectionUri() });
   await applyMigrations(pool);
+  process.env['MASTER_KEY'] = TEST_MASTER_KEY;
   app = await buildServer(pool);
 }, 180_000);
 
@@ -287,5 +342,40 @@ describe('cancellation', () => {
     });
     expect(res.statusCode).toBe(403);
     expect(JSON.parse(res.body) as { error: string }).toMatchObject({ error: 'totp_required' });
+  });
+
+  it('rolls the TOTP counter back when the cancel transaction fails', async () => {
+    const { userId, cookie } = await createUserAndLogin('totp-rollback@example.com');
+    const secret = await enableTotp(userId);
+    const sid = await createActiveSwitch(userId);
+    auditFailures.triggerCancel = true;
+    let statusCode = 0;
+    try {
+      const code = await generateTotp({ secret });
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/switches/${sid}/cancel`,
+        headers: authCookie(cookie),
+        payload: { totpCode: code },
+      });
+      statusCode = res.statusCode;
+    } finally {
+      auditFailures.triggerCancel = false;
+    }
+    expect(statusCode).toBe(500);
+    const counter = await pool.query<{ totp_last_counter: string }>(
+      `SELECT totp_last_counter FROM users WHERE id=$1`,
+      [userId],
+    );
+    expect(counter.rows[0]!.totp_last_counter).toBe('0');
+    const sw = await pool.query<{ status: string }>(`SELECT status FROM switches WHERE id=$1`, [
+      sid,
+    ]);
+    expect(sw.rows[0]!.status).toBe('active');
+    const auditRows = await pool.query(
+      `SELECT 1 FROM audit_log WHERE action='trigger_cancelled' AND target=$1`,
+      [sid],
+    );
+    expect(auditRows.rows).toHaveLength(0);
   });
 });
