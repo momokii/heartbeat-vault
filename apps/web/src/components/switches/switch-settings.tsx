@@ -39,6 +39,7 @@ export function SwitchSettings({
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   async function save(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -76,6 +77,11 @@ export function SwitchSettings({
       setMessage('Type the exact switch name to confirm deletion.');
       return;
     }
+    setMessage(null);
+    setConfirmingDelete(true);
+  }
+  async function confirmRemove(): Promise<void> {
+    setConfirmingDelete(false);
     setBusy(true);
     setMessage(null);
     try {
@@ -210,6 +216,34 @@ export function SwitchSettings({
             >
               Delete switch
             </Button>
+            {confirmingDelete ? (
+              <div
+                role="alertdialog"
+                aria-label={`Confirm deletion of ${item.title}`}
+                className="space-y-2 rounded-md border border-[var(--color-destructive)] p-3"
+              >
+                <p className="text-sm font-medium">
+                  Permanently delete “{item.title}”? This cannot be undone.
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={busy}
+                    onClick={() => void confirmRemove()}
+                  >
+                    {busy ? 'Deleting…' : 'Yes, delete it'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </form>
         </CardContent>
       </Card>

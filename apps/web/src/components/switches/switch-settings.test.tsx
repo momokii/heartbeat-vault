@@ -83,10 +83,43 @@ describe('SwitchSettings', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Delete switch' }));
 
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Confirm deletion of Recovery plan' }),
+    ).toBeVisible();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/switches/${item.id}`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, delete it' }));
+
     expect(await screen.findByText('Dashboard')).toBeVisible();
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/switches/${item.id}`,
       expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
+    );
+  });
+
+  it('cancels the final delete confirmation without sending a request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ok: true }));
+    renderSettings();
+
+    fireEvent.change(screen.getByLabelText('Type “Recovery plan” to delete'), {
+      target: { value: 'Recovery plan' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete switch' }));
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Confirm deletion of Recovery plan' }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(
+      screen.queryByRole('alertdialog', { name: 'Confirm deletion of Recovery plan' }),
+    ).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/switches/${item.id}`,
+      expect.objectContaining({ method: 'DELETE' }),
     );
   });
 });
