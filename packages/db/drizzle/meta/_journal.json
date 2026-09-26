@@ -57,6 +57,13 @@
       "when": 1790390400000,
       "tag": "0007_switch_title_uniqueness",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790476800000,
+      "tag": "0008_audit_details",
+      "breakpoints": true
     }
   ]
 }

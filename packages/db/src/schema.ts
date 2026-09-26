@@ -253,6 +253,9 @@ export const auditLog = pgTable('audit_log', {
   target: text('target'),
   ip: text('ip'),
   requestId: text('request_id'),
+  details: jsonb('details')
+    .notNull()
+    .default(sql`'{}'::jsonb`),
   prevHash: bytea('prev_hash'),
   hash: bytea('hash').notNull(),
 });
