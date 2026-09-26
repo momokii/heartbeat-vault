@@ -45,6 +45,7 @@ export function registerTotpRoutes(app: FastifyInstance, pool: Pool, deps: TotpD
         target: user.id,
         ip: request.ip,
         requestId: request.id,
+        details: { method: 'totp' },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -97,6 +98,7 @@ export function registerTotpRoutes(app: FastifyInstance, pool: Pool, deps: TotpD
         target: user.id,
         ip: request.ip,
         requestId: request.id,
+        details: { method: 'totp' },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -160,6 +162,7 @@ export function registerTotpRoutes(app: FastifyInstance, pool: Pool, deps: TotpD
           target: user.id,
           ip: request.ip,
           requestId: request.id,
+          details: { method: 'totp' },
         });
         await client.query('COMMIT');
       } catch (err) {
@@ -210,6 +213,7 @@ export function registerTotpRoutes(app: FastifyInstance, pool: Pool, deps: TotpD
         target: user.id,
         ip: request.ip,
         requestId: request.id,
+        details: { method: 'totp' },
       });
       await client.query('COMMIT');
     } catch (err) {

@@ -131,6 +131,7 @@ export function registerWebauthnRegistrationRoutes(
           target: user.id,
           ip: request.ip,
           requestId: request.id,
+          details: { method: 'webauthn' },
         });
       } finally {
         client.release();

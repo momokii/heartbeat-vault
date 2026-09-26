@@ -53,7 +53,7 @@ export async function registerUserRoutes(app: FastifyInstance, pool: Pool): Prom
         return reply.status(404).send({ error: 'not_found' });
       }
 
-      await pool.query(
+      const revoked = await pool.query(
         `UPDATE sessions SET revoked_at = clock_timestamp() WHERE user_id = $1 AND revoked_at IS NULL`,
         [id],
       );
@@ -66,6 +66,7 @@ export async function registerUserRoutes(app: FastifyInstance, pool: Pool): Prom
           target: id,
           ip: request.ip,
           requestId: request.id,
+          details: { scope: 'user_sessions', revokedCount: revoked.rowCount ?? 0 },
         });
       } finally {
         client.release();

@@ -162,6 +162,15 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id,
         ip: request.ip,
         requestId: request.id,
+        details: {
+          title: d.title,
+          mode: d.mode,
+          status: 'paused',
+          heartbeatIntervalHours: d.heartbeatIntervalHours,
+          graceWindowHours: d.graceWindowHours,
+          dryRun: d.dryRun,
+          releasePolicy: d.releasePolicy,
+        },
       });
       await client.query('COMMIT');
       return reply.status(201).send({ id, status: 'paused', dryRun: d.dryRun });
@@ -220,6 +229,28 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
     const row = await loadSwitch(pool, id.data, user.id, user.role === 'admin');
     if (!row) return reply.status(404).send({ error: 'not_found' });
     const d = parsed.data;
+    const changes: Record<
+      string,
+      { readonly from: string | number | boolean; readonly to: string | number | boolean }
+    > = {};
+    const previousHeartbeatIntervalHours = intervalToHours(row.heartbeat_interval);
+    const previousGraceWindowHours = intervalToHours(row.grace_window);
+    if (d.title !== undefined && d.title !== row.title)
+      changes['title'] = { from: row.title, to: d.title };
+    if (
+      d.heartbeatIntervalHours !== undefined &&
+      d.heartbeatIntervalHours !== previousHeartbeatIntervalHours
+    ) {
+      changes['heartbeatIntervalHours'] = {
+        from: previousHeartbeatIntervalHours,
+        to: d.heartbeatIntervalHours,
+      };
+    }
+    if (d.graceWindowHours !== undefined && d.graceWindowHours !== previousGraceWindowHours) {
+      changes['graceWindowHours'] = { from: previousGraceWindowHours, to: d.graceWindowHours };
+    }
+    if (d.dryRun !== undefined && d.dryRun !== row.dry_run)
+      changes['dryRun'] = { from: row.dry_run, to: d.dryRun };
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -245,6 +276,7 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id.data,
         ip: request.ip,
         requestId: request.id,
+        details: { changes },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -280,6 +312,7 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id.data,
         ip: request.ip,
         requestId: request.id,
+        details: { title: row.title, mode: row.mode, status: row.status },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -343,6 +376,12 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id.data,
         ip: request.ip,
         requestId: request.id,
+        details: {
+          fromStatus: row.status,
+          toStatus: 'active',
+          acceptedRecipientCount: Number(counts.accepted),
+          hasPayload: true,
+        },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -375,6 +414,7 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id.data,
         ip: request.ip,
         requestId: request.id,
+        details: { fromStatus: row.status, toStatus: 'paused' },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -409,6 +449,10 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      const existingPayload = await client.query<{ id: string }>(
+        `SELECT id FROM sealed_payloads WHERE switch_id=$1 FOR UPDATE`,
+        [id.data],
+      );
       await client.query(
         `INSERT INTO sealed_payloads (switch_id, kid, kek_version, wrapped_dek_nonce, wrapped_dek_ct,
             payload_nonce, payload_ct, payload_tag, aad)
@@ -436,6 +480,7 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id.data,
         ip: request.ip,
         requestId: request.id,
+        details: { mode: row.mode, replaced: existingPayload.rows.length > 0 },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -473,6 +518,7 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: res.rows[0]!.id,
         ip: request.ip,
         requestId: request.id,
+        details: { channel: parsed.data.channel, status: 'pending' },
       });
       await client.query('COMMIT');
       return reply.status(201).send({ id: res.rows[0]!.id, inviteToken });
@@ -526,20 +572,26 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const del = await client.query(`DELETE FROM recipients WHERE id=$1 AND switch_id=$2`, [
-          rid.data,
-          id.data,
-        ]);
-        if ((del.rowCount ?? 0) === 0) {
+        const recipient = await client.query<{ channel: string; status: string }>(
+          `SELECT channel, status FROM recipients WHERE id=$1 AND switch_id=$2 FOR UPDATE`,
+          [rid.data, id.data],
+        );
+        const previousRecipient = recipient.rows[0];
+        if (!previousRecipient) {
           await client.query('ROLLBACK');
           return reply.status(404).send({ error: 'not_found' });
         }
+        await client.query(`DELETE FROM recipients WHERE id=$1 AND switch_id=$2`, [
+          rid.data,
+          id.data,
+        ]);
         await writeAudit(client, {
           actorId: user.id,
           action: 'recipient_deleted',
           target: rid.data,
           ip: request.ip,
           requestId: request.id,
+          details: { channel: previousRecipient.channel, previousStatus: previousRecipient.status },
         });
         await client.query('COMMIT');
       } catch (err) {
@@ -565,8 +617,8 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
     const parsed = z.object({ token: z.string().min(16).max(200) }).safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
     const tokenHash = hashToken(parsed.data.token);
-    const res = await pool.query<{ id: string; status: string; title: string }>(
-      `SELECT r.id, r.status, s.title
+    const res = await pool.query<{ id: string; channel: string; status: string; title: string }>(
+      `SELECT r.id, r.channel, r.status, s.title
        FROM recipients r JOIN switches s ON s.id = r.switch_id
        WHERE r.invite_token_hash=$1`,
       [tokenHash],
@@ -586,6 +638,7 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
           target: row.id,
           ip: request.ip,
           requestId: request.id,
+          details: { channel: row.channel, status: 'accepted' },
         });
         await client.query('COMMIT');
       } catch (err) {

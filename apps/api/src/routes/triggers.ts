@@ -70,6 +70,9 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
       return reply.status(409).send({ error: 'released_immutable' });
     }
     const d = parsed.data;
+    const details: Record<string, unknown> = { triggerType: d.type };
+    if (d.type === 'fixed_date') details['fireAt'] = d.fireAt;
+    if (d.type === 'quorum') details['quorumThreshold'] = d.threshold;
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -104,6 +107,7 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
         target: id.data,
         ip: request.ip,
         requestId: request.id,
+        details,
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -176,6 +180,11 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
         target: recipient.id,
         ip: request.ip,
         requestId: request.id,
+        details: {
+          vote: 'deceased',
+          quorumThreshold: swRow.quorum_threshold,
+          confirmedVotes: votes,
+        },
       });
       await client.query('COMMIT');
     } catch (err) {
@@ -257,6 +266,7 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
         target: id.data,
         ip: request.ip,
         requestId: request.id,
+        details: { cancellation: 'pre_fire' },
       });
       await client.query('COMMIT');
     } catch (err) {

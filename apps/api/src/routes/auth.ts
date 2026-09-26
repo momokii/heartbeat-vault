@@ -113,6 +113,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
             target: user.id,
             ip: request.ip,
             requestId: request.id,
+            details: { failedAttempts: 5, lockoutMinutes: 15 },
           });
         }
         await client.query('COMMIT');
@@ -152,6 +153,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         target: user.id,
         ip: request.ip,
         requestId: request.id,
+        details: stepUp ? { method: 'totp' } : { outcome: 'success' },
       });
       await client.query('COMMIT');
       reply.setCookie(sessionCookieName(), token, {
@@ -190,6 +192,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         target: user.id,
         ip: request.ip,
         requestId: request.id,
+        details: { scope: 'current_session' },
       });
     } finally {
       client.release();
@@ -243,6 +246,7 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         target: u.id,
         ip: request.ip,
         requestId: request.id,
+        details: { scope: 'all_sessions' },
       });
     } finally {
       client.release();

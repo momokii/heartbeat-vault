@@ -136,11 +136,13 @@ describe('T3.4 roles + invites + RBAC + IDOR', () => {
     expect(dbInvite.rows[0]!.role).toBe('user');
 
     // audit row for invite_created
-    const auditCreated = await pool.query(
-      `SELECT action FROM audit_log WHERE action='invite_created' AND target=$1`,
+    const auditCreated = await pool.query<{ details: Record<string, unknown> }>(
+      `SELECT details FROM audit_log WHERE action='invite_created' AND target=$1`,
       [invBody.id],
     );
     expect(auditCreated.rowCount).toBe(1);
+    expect(auditCreated.rows[0]!.details).toEqual({ role: 'user', expiresInHours: 24 });
+    expect(JSON.stringify(auditCreated.rows[0]!.details)).not.toContain(invBody.token);
 
     // consume
     resetRateLimitForTests();
@@ -160,11 +162,12 @@ describe('T3.4 roles + invites + RBAC + IDOR', () => {
     );
     expect(consumed.rows[0]!.consumed_at).not.toBeNull();
 
-    const auditConsumed = await pool.query(
-      `SELECT action FROM audit_log WHERE action='invite_consumed' AND target=$1`,
+    const auditConsumed = await pool.query<{ details: Record<string, unknown> }>(
+      `SELECT details FROM audit_log WHERE action='invite_consumed' AND target=$1`,
       [invBody.id],
     );
     expect(auditConsumed.rowCount).toBe(1);
+    expect(auditConsumed.rows[0]!.details).toEqual({ role: 'user' });
 
     // login with new user works
     resetRateLimitForTests();

@@ -105,10 +105,12 @@ describe('setup bootstrap (T3.1)', () => {
     expect(userRes.rowCount).toBe(1);
     expect(userRes.rows[0].role).toBe('admin');
 
-    const auditRes = await pool.query(
-      `SELECT action FROM audit_log WHERE action='setup_completed'`,
+    const auditRes = await pool.query<{ details: Record<string, unknown> }>(
+      `SELECT details FROM audit_log WHERE action='setup_completed'`,
     );
     expect(auditRes.rowCount).toBe(1);
+    expect(auditRes.rows[0]!.details).toEqual({ role: 'admin' });
+    expect(JSON.stringify(auditRes.rows[0]!.details)).not.toContain('supersecure123');
 
     const configRes = await pool.query(
       `SELECT key, value FROM app_config WHERE key='setup_completed'`,

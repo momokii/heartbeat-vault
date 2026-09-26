@@ -45,6 +45,7 @@ export async function registerOpenRegistrationRoute(
         target: userId,
         ip: request.ip,
         requestId: request.id,
+        details: { role: 'user' },
       });
       await client.query('COMMIT');
       return reply.status(201).send({ id: userId, email, role: 'user' });

@@ -116,6 +116,7 @@ export function registerRecoveryRoutes(
           target: user.id,
           ip: request.ip,
           requestId: request.id,
+          details: { method: 'recovery_codes', generatedCount: RECOVERY_CODE_COUNT },
         });
         await client.query('COMMIT');
       } catch (err) {
@@ -194,6 +195,7 @@ export function registerRecoveryRoutes(
         target: user.id,
         ip: request.ip,
         requestId: request.id,
+        details: { method: 'recovery_code' },
       });
       await client.query('COMMIT');
     } catch (err) {

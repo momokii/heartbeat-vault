@@ -128,6 +128,7 @@ export function registerWebauthnRoutes(app: FastifyInstance, pool: Pool, deps: W
           target: user.id,
           ip: request.ip,
           requestId: request.id,
+          details: { method: 'webauthn' },
         });
         await client.query('COMMIT');
       } catch (err) {

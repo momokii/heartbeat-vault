@@ -67,6 +67,7 @@ export async function recordHeartbeat(
     target: switchId,
     ip: audit.ip ?? null,
     requestId: audit.requestId ?? null,
+    details: { method },
   });
 }
 
@@ -96,6 +97,7 @@ export async function registerHeartbeatRoutes(app: FastifyInstance, pool: Pool):
           target: id.data,
           ip: request.ip,
           requestId: request.id,
+          details: { method: 'token' },
         });
         await client.query('COMMIT');
       } catch (err) {
@@ -133,6 +135,7 @@ export async function registerHeartbeatRoutes(app: FastifyInstance, pool: Pool):
           target: id.data,
           ip: request.ip,
           requestId: request.id,
+          details: { method: 'email_link', expiresInDays: 30 },
         });
         await client.query('COMMIT');
       } catch (err) {

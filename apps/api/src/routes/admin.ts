@@ -28,6 +28,10 @@ export async function registerAdminRoutes(app: FastifyInstance, pool: Pool): Pro
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        const previous = await client.query<{ value: string }>(
+          `SELECT value FROM app_config WHERE key='open_registration' FOR UPDATE`,
+        );
+        const from = previous.rows[0]?.value === 'true';
         await client.query(
           `INSERT INTO app_config (key, value, updated_at) VALUES ('open_registration', $1, clock_timestamp())
            ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = clock_timestamp()`,
@@ -39,6 +43,7 @@ export async function registerAdminRoutes(app: FastifyInstance, pool: Pool): Pro
           target: 'open_registration',
           ip: request.ip,
           requestId: request.id,
+          details: { setting: 'openRegistration', from, to: openRegistration },
         });
         await client.query('COMMIT');
       } catch (err) {

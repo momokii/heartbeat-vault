@@ -129,6 +129,7 @@ export async function registerSetupRoutes(app: FastifyInstance, pool: Pool): Pro
         target: userId,
         ip: request.ip,
         requestId: request.id,
+        details: { role: 'admin' },
       });
 
       await client.query('COMMIT');

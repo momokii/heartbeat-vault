@@ -105,6 +105,7 @@ export async function registerPasswordResetRoutes(app: FastifyInstance, pool: Po
           target: passwordReset.id,
           ip: request.ip,
           requestId: request.id,
+          details: { expiresInHours: 24 },
         });
         await client.query('COMMIT');
 
@@ -194,6 +195,7 @@ export async function registerPasswordResetRoutes(app: FastifyInstance, pool: Po
         target: passwordReset.id,
         ip: request.ip,
         requestId: request.id,
+        details: { sessionsRevoked: true },
       });
       await client.query('COMMIT');
 

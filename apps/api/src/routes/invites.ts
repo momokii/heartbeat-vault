@@ -61,6 +61,7 @@ export async function registerInviteRoutes(app: FastifyInstance, pool: Pool): Pr
         target: inviteId,
         ip: request.ip,
         requestId: request.id,
+        details: { role, expiresInHours: 24 },
       });
       await client.query('COMMIT');
       return reply.status(201).send({ id: inviteId, token });
@@ -172,6 +173,7 @@ export async function registerInviteRoutes(app: FastifyInstance, pool: Pool): Pr
         target: invite.id,
         ip: request.ip,
         requestId: request.id,
+        details: { role: invite.role },
       });
 
       await client.query('COMMIT');

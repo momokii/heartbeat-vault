@@ -156,10 +156,19 @@ describe('account password T3.5', () => {
     const { verifyPassword } = await import('@heartbeat-vault/crypto');
     await expect(verifyPassword(passwordHash, currentPassword)).resolves.toBe(false);
     await expect(verifyPassword(passwordHash, newPassword)).resolves.toBe(true);
-    const audit = await pool.query<{ action: string; target: string }>(
-      `SELECT action, target FROM audit_log WHERE actor_id = $1 ORDER BY id DESC LIMIT 1`,
+    const audit = await pool.query<{
+      action: string;
+      target: string;
+      details: Record<string, unknown>;
+    }>(
+      `SELECT action, target, details FROM audit_log WHERE actor_id = $1 ORDER BY id DESC LIMIT 1`,
       [userId],
     );
-    expect(audit.rows[0]).toEqual({ action: 'account_password_changed', target: userId });
+    expect(audit.rows[0]).toEqual({
+      action: 'account_password_changed',
+      target: userId,
+      details: { credential: 'password' },
+    });
+    expect(JSON.stringify(audit.rows[0]!.details)).not.toContain(newPassword);
   });
 });

@@ -64,6 +64,7 @@ export async function registerAccountRoutes(app: FastifyInstance, pool: Pool): P
         target: user.id,
         ip: request.ip,
         requestId: request.id,
+        details: { credential: 'password' },
       });
       await client.query('COMMIT');
       return reply.status(200).send({ ok: true });

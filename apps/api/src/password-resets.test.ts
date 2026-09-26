@@ -93,8 +93,9 @@ describe('admin-issued password resets', () => {
           action: string;
           actor_id: string | null;
           target: string | null;
+          details: Record<string, unknown>;
         }>(
-          `SELECT action, actor_id, target FROM audit_log
+          `SELECT action, actor_id, target, details FROM audit_log
            WHERE action = 'password_reset_issued' AND target = $1`,
           [body.id],
         )
@@ -104,6 +105,7 @@ describe('admin-issued password resets', () => {
       action: 'password_reset_issued',
       actor_id: adminId,
       target: body.id,
+      details: { expiresInHours: 24 },
     });
   });
 
@@ -201,8 +203,9 @@ describe('admin-issued password resets', () => {
           action: string;
           actor_id: string | null;
           target: string | null;
+          details: Record<string, unknown>;
         }>(
-          `SELECT action, actor_id, target FROM audit_log
+          `SELECT action, actor_id, target, details FROM audit_log
            WHERE action = 'password_reset_consumed' AND target = $1`,
           [resetId],
         )
@@ -212,7 +215,9 @@ describe('admin-issued password resets', () => {
       action: 'password_reset_consumed',
       actor_id: targetId,
       target: resetId,
+      details: { sessionsRevoked: true },
     });
+    expect(JSON.stringify(audit.details)).not.toContain(newPassword);
   });
 
   it.each([
