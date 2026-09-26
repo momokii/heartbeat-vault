@@ -38,6 +38,7 @@ const exportListQuerySchema = z
     format: z.enum(['csv', 'json']).optional(),
     scope: z.enum(['global', 'switch']).optional(),
     switchId: z.string().uuid().optional(),
+    q: z.string().trim().min(1).max(200).optional(),
   })
   .strict();
 
@@ -174,6 +175,10 @@ export async function registerReportsRoutes(app: FastifyInstance, pool: Pool): P
       if (parsed.data.scope !== undefined) clauses.push(`j.scope_type = ${add(parsed.data.scope)}`);
       if (parsed.data.switchId !== undefined)
         clauses.push(`j.switch_id = ${add(parsed.data.switchId)}`);
+      if (parsed.data.q !== undefined) {
+        const pattern = `%${parsed.data.q}%`;
+        clauses.push(`(u.email ILIKE ${add(pattern)} OR s.title ILIKE ${add(pattern)})`);
+      }
       const where = clauses.length === 0 ? '' : `WHERE ${clauses.join(' AND ')}`;
 
       const result = await pool.query<ExportJobRow>(

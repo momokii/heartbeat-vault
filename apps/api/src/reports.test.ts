@@ -406,6 +406,16 @@ describe('report exports', () => {
       url: '/api/reports/exports?format=csv',
       headers: { cookie: admin.cookie },
     });
+    const byTitle = await app.inject({
+      method: 'GET',
+      url: '/api/reports/exports?q=history-plan',
+      headers: { cookie: admin.cookie },
+    });
+    const byActor = await app.inject({
+      method: 'GET',
+      url: '/api/reports/exports?q=admin%40example.com',
+      headers: { cookie: admin.cookie },
+    });
     const paged = await app.inject({
       method: 'GET',
       url: '/api/reports/exports?limit=1',
@@ -439,6 +449,15 @@ describe('report exports', () => {
     });
     expect(csvOnly.json()).toMatchObject({
       items: [expect.objectContaining({ id: allBody.items[1]!.id })],
+    });
+    expect(byTitle.json()).toMatchObject({
+      items: [expect.objectContaining({ id: allBody.items[0]!.id })],
+    });
+    expect(byActor.json()).toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({ id: allBody.items[0]!.id }),
+        expect.objectContaining({ id: allBody.items[1]!.id }),
+      ]),
     });
     expect(paged.json()).toMatchObject({
       items: [expect.objectContaining({ id: allBody.items[0]!.id })],
