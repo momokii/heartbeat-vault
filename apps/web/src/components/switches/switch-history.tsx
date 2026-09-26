@@ -1,27 +1,15 @@
-import { z } from 'zod';
+import { AuditDetails } from '@/components/audit/audit-details';
+import { AuditFilterFields } from '@/components/audit/audit-filter-fields';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-
-const auditItemSchema = z.object({
-  id: z.number().int(),
-  timestamp: z.string().datetime(),
-  actorId: z.string().nullable(),
-  actorEmail: z.string().email().nullable(),
-  action: z.string(),
-  target: z.string().nullable(),
-});
-
-export const auditPageSchema = z.object({
-  items: z.array(auditItemSchema),
-  nextBeforeId: z.number().int().nullable(),
-});
+import type { AuditFilterValues, AuditItem } from '@/lib/audit-contract';
 
 export type AuditHistoryState =
   | { readonly kind: 'loading' }
   | { readonly kind: 'unavailable' }
   | {
       readonly kind: 'ready';
-      readonly items: readonly z.infer<typeof auditItemSchema>[];
+      readonly items: readonly AuditItem[];
       readonly nextBeforeId: number | null;
       readonly loadingMore: boolean;
       readonly message: string | null;
@@ -29,6 +17,10 @@ export type AuditHistoryState =
 
 type SwitchHistoryProps = {
   readonly state: AuditHistoryState;
+  readonly filters: AuditFilterValues;
+  readonly onFiltersChange: (filters: AuditFilterValues) => void;
+  readonly onApplyFilters: () => Promise<void>;
+  readonly onResetFilters: () => Promise<void>;
   readonly onLoadMore: () => void;
 };
 
@@ -37,7 +29,14 @@ const timestampFormatter = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 
-export function SwitchHistory({ state, onLoadMore }: SwitchHistoryProps) {
+export function SwitchHistory({
+  state,
+  filters,
+  onFiltersChange,
+  onApplyFilters,
+  onResetFilters,
+  onLoadMore,
+}: SwitchHistoryProps) {
   return (
     <Card>
       <CardHeader>
@@ -45,6 +44,21 @@ export function SwitchHistory({ state, onLoadMore }: SwitchHistoryProps) {
         <CardDescription>Recorded activity for this switch.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <form
+          className="grid gap-4 sm:grid-cols-3"
+          onSubmit={event => {
+            event.preventDefault();
+            void onApplyFilters();
+          }}
+        >
+          <AuditFilterFields idPrefix="history" filters={filters} onChange={onFiltersChange} />
+          <div className="flex flex-wrap gap-3 sm:col-span-3">
+            <Button type="submit">Apply filters</Button>
+            <Button type="button" variant="outline" onClick={() => void onResetFilters()}>
+              Reset
+            </Button>
+          </div>
+        </form>
         {state.kind === 'loading' ? (
           <p className="text-sm text-[var(--color-muted-foreground)]">Loading history…</p>
         ) : state.kind === 'unavailable' ? (
@@ -58,22 +72,22 @@ export function SwitchHistory({ state, onLoadMore }: SwitchHistoryProps) {
         ) : (
           <ul className="divide-y rounded-md border">
             {state.items.map(item => (
-              <li
-                key={item.id}
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium">{item.action}</p>
-                  {item.target !== null ? (
-                    <p className="truncate font-mono text-xs text-[var(--color-muted-foreground)]">
-                      {item.target}
-                    </p>
-                  ) : null}
+              <li key={item.id} className="space-y-2 px-3 py-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium">{item.action}</p>
+                    {item.target !== null ? (
+                      <p className="truncate font-mono text-xs text-[var(--color-muted-foreground)]">
+                        {item.target}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="text-right text-xs text-[var(--color-muted-foreground)]">
+                    <p>{item.actorEmail ?? 'Unknown actor'}</p>
+                    <p>{timestampFormatter.format(new Date(item.timestamp))}</p>
+                  </div>
                 </div>
-                <div className="text-right text-xs text-[var(--color-muted-foreground)]">
-                  <p>{item.actorEmail ?? 'Unknown actor'}</p>
-                  <p>{timestampFormatter.format(new Date(item.timestamp))}</p>
-                </div>
+                <AuditDetails details={item.details} />
               </li>
             ))}
           </ul>

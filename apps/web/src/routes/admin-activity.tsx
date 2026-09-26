@@ -1,39 +1,34 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { z } from 'zod';
+import { AuditDetails } from '@/components/audit/audit-details';
+import {
+  AdminActivityFilterForm,
+  type AdminActivityFilters,
+} from '@/components/audit/admin-activity-filter-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import {
+  EMPTY_AUDIT_FILTERS,
+  auditPageSchema,
+  buildAuditQuery,
+  type AuditItem,
+} from '@/lib/audit-contract';
 import { ApiError, apiClient } from '@/lib/api-client';
 
-const activityItemSchema = z.object({
-  id: z.number().int().positive(),
-  timestamp: z.string().datetime(),
-  actorId: z.string().nullable(),
-  actorEmail: z.string().email().nullable(),
-  action: z.string(),
-  target: z.string().nullable(),
-});
-const activityResponseSchema = z.object({
-  items: z.array(activityItemSchema),
-  nextBeforeId: z.number().int().positive().nullable(),
-});
-
-type ActivityItem = z.infer<typeof activityItemSchema>;
-type ActivityFilters = { readonly action: string; readonly query: string };
+type ExportFormat = 'csv' | 'json';
 type ActivityState =
   | { readonly kind: 'loading' }
   | { readonly kind: 'forbidden' }
   | { readonly kind: 'error' }
   | {
       readonly kind: 'ready';
-      readonly items: readonly ActivityItem[];
+      readonly items: readonly AuditItem[];
       readonly nextBeforeId: number | null;
       readonly isLoadingMore: boolean;
     };
 
-const EMPTY_FILTERS: ActivityFilters = { action: '', query: '' };
+const EMPTY_FILTERS: AdminActivityFilters = { ...EMPTY_AUDIT_FILTERS, action: '', query: '' };
+const IDLE_EXPORTS: Readonly<Record<ExportFormat, boolean>> = { csv: false, json: false };
 
 function formatActivityTime(timestamp: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
@@ -41,16 +36,27 @@ function formatActivityTime(timestamp: string): string {
   );
 }
 
-function actorLabel(item: ActivityItem): string {
+function actorLabel(item: AuditItem): string {
   return item.actorEmail ?? item.actorId ?? 'System';
 }
 
+function downloadBlob(blob: Blob, format: ExportFormat): void {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = `audit-log.${format}`;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function AdminActivityPage() {
-  const [filters, setFilters] = useState<ActivityFilters>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<AdminActivityFilters>(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<AdminActivityFilters>(EMPTY_FILTERS);
   const [state, setState] = useState<ActivityState>({ kind: 'loading' });
+  const [exportsInFlight, setExportsInFlight] = useState(IDLE_EXPORTS);
 
   const loadFirstPage = useCallback(
-    async (nextFilters: ActivityFilters, signal?: AbortSignal): Promise<void> => {
+    async (nextFilters: AdminActivityFilters, signal?: AbortSignal): Promise<void> => {
       setState({ kind: 'loading' });
       try {
         const response = await apiClient.request({
@@ -58,8 +64,9 @@ export function AdminActivityPage() {
           query: {
             action: nextFilters.action || undefined,
             q: nextFilters.query || undefined,
+            ...buildAuditQuery(nextFilters),
           },
-          schema: activityResponseSchema,
+          schema: auditPageSchema,
           signal,
         });
         if (!signal?.aborted) {
@@ -94,28 +101,29 @@ export function AdminActivityPage() {
 
   async function applyFilters(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    setAppliedFilters(filters);
     await loadFirstPage(filters);
   }
 
   async function resetFilters(): Promise<void> {
     setFilters(EMPTY_FILTERS);
+    setAppliedFilters(EMPTY_FILTERS);
     await loadFirstPage(EMPTY_FILTERS);
   }
 
   async function loadMore(): Promise<void> {
     if (state.kind !== 'ready' || state.nextBeforeId === null || state.isLoadingMore) return;
 
-    const beforeId = state.nextBeforeId;
     setState({ ...state, isLoadingMore: true });
     try {
       const response = await apiClient.request({
         path: '/audit-log',
         query: {
-          beforeId,
-          action: filters.action || undefined,
-          q: filters.query || undefined,
+          ...buildAuditQuery(appliedFilters, state.nextBeforeId),
+          action: appliedFilters.action || undefined,
+          q: appliedFilters.query || undefined,
         },
-        schema: activityResponseSchema,
+        schema: auditPageSchema,
       });
       setState(current =>
         current.kind === 'ready'
@@ -133,6 +141,19 @@ export function AdminActivityPage() {
         return;
       }
       throw error;
+    }
+  }
+
+  async function exportActivity(format: ExportFormat): Promise<void> {
+    setExportsInFlight(current => ({ ...current, [format]: true }));
+    try {
+      const blob = await apiClient.download({
+        path: '/audit-log/export',
+        query: { ...buildAuditQuery(appliedFilters), format },
+      });
+      downloadBlob(blob, format);
+    } finally {
+      setExportsInFlight(current => ({ ...current, [format]: false }));
     }
   }
 
@@ -171,46 +192,36 @@ export function AdminActivityPage() {
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">Activity log</h1>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Filter activity</CardTitle>
-          <CardDescription>
-            Apply filters to search recorded administrative activity.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={applyFilters}>
-            <div className="space-y-2">
-              <Label htmlFor="activity-action">Action</Label>
-              <Input
-                id="activity-action"
-                value={filters.action}
-                onChange={event => setFilters({ ...filters, action: event.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="activity-search">Search activity</Label>
-              <Input
-                id="activity-search"
-                value={filters.query}
-                onChange={event => setFilters({ ...filters, query: event.target.value })}
-              />
-            </div>
-            <div className="flex flex-wrap gap-3 sm:col-span-2">
-              <Button type="submit">Apply filters</Button>
-              <Button type="button" variant="outline" onClick={() => void resetFilters()}>
-                Reset
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+      <AdminActivityFilterForm
+        filters={filters}
+        onChange={setFilters}
+        onSubmit={event => void applyFilters(event)}
+        onReset={() => void resetFilters()}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Recorded activity</CardTitle>
           <CardDescription>{state.items.length} entries loaded.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={exportsInFlight.csv}
+              onClick={() => void exportActivity('csv')}
+            >
+              {exportsInFlight.csv ? 'Exporting CSV…' : 'Export CSV'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={exportsInFlight.json}
+              onClick={() => void exportActivity('json')}
+            >
+              {exportsInFlight.json ? 'Exporting JSON…' : 'Export JSON'}
+            </Button>
+          </div>
           {state.items.length === 0 ? (
             <p className="text-sm text-[var(--color-muted-foreground)]">
               No activity matches your filters.
@@ -218,7 +229,7 @@ export function AdminActivityPage() {
           ) : (
             <ul className="divide-y rounded-md border">
               {state.items.map(item => (
-                <li key={item.id} className="space-y-1 px-3 py-3 text-sm">
+                <li key={item.id} className="space-y-2 px-3 py-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-medium">{item.action}</span>
                     <time
@@ -232,6 +243,7 @@ export function AdminActivityPage() {
                   <p className="break-all text-[var(--color-muted-foreground)]">
                     {item.target ?? 'No target'}
                   </p>
+                  <AuditDetails details={item.details} />
                 </li>
               ))}
             </ul>

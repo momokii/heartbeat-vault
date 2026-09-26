@@ -40,6 +40,13 @@ export type RequestOptions<T> = {
   readonly timeoutMs?: number | undefined;
 };
 
+export type BlobRequestOptions = {
+  readonly path: string;
+  readonly query?: Readonly<Record<string, string | number | boolean | undefined>>;
+  readonly signal?: AbortSignal | undefined;
+  readonly timeoutMs?: number | undefined;
+};
+
 function buildUrl(
   base: string,
   path: string,
@@ -142,7 +149,42 @@ export function createApiClient(options: ApiClientOptions = {}) {
     return result.data;
   }
 
-  return { request, baseUrl };
+  async function download(opts: BlobRequestOptions): Promise<Blob> {
+    const url = buildUrl(baseUrl, opts.path, opts.query);
+    const timeoutMs = opts.timeoutMs ?? defaultTimeout;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const signal: AbortSignal | undefined = opts.signal
+      ? AbortSignal.any([opts.signal, controller.signal])
+      : controller.signal;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: defaultHeaders,
+        signal,
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new ApiError(
+          `HTTP ${response.status}: ${response.statusText}`,
+          'HTTP_ERROR',
+          response.status,
+        );
+      }
+      return await response.blob();
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new ApiError('Request timed out', 'TIMEOUT', null, err);
+      }
+      throw new ApiError('Network error', 'NETWORK_ERROR', null, err);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return { request, download, baseUrl };
 }
 
 // Default singleton for app use (env-driven base URL)

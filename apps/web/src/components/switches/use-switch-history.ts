@@ -1,27 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
-import { apiClient } from '@/lib/api-client';
-import { auditPageSchema, type AuditHistoryState } from './switch-history';
+import {
+  EMPTY_AUDIT_FILTERS,
+  auditPageSchema,
+  buildAuditQuery,
+  type AuditFilterValues,
+} from '@/lib/audit-contract';
+import { ApiError, apiClient } from '@/lib/api-client';
+import type { AuditHistoryState } from './switch-history';
 
 type SwitchHistory = {
   readonly historyState: AuditHistoryState;
+  readonly historyFilters: AuditFilterValues;
+  readonly setHistoryFilters: (filters: AuditFilterValues) => void;
+  readonly applyHistoryFilters: () => Promise<void>;
+  readonly resetHistoryFilters: () => Promise<void>;
   readonly loadMoreHistory: () => Promise<void>;
 };
 
 export function useSwitchHistory(id: string | undefined): SwitchHistory {
   const [historyState, setHistoryState] = useState<AuditHistoryState>({ kind: 'loading' });
+  const [historyFilters, setHistoryFilters] = useState<AuditFilterValues>(EMPTY_AUDIT_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<AuditFilterValues>(EMPTY_AUDIT_FILTERS);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    async function loadHistory(): Promise<void> {
+  const loadFirstPage = useCallback(
+    async (filters: AuditFilterValues, signal?: AbortSignal): Promise<void> => {
       if (!id || !z.string().uuid().safeParse(id).success) return;
+      setHistoryState({ kind: 'loading' });
       try {
         const page = await apiClient.request({
           path: `/switches/${id}/audit`,
+          query: buildAuditQuery(filters),
           schema: auditPageSchema,
-          signal: controller.signal,
+          signal,
         });
-        if (!controller.signal.aborted)
+        if (!signal?.aborted) {
           setHistoryState({
             kind: 'ready',
             items: page.items,
@@ -29,13 +42,35 @@ export function useSwitchHistory(id: string | undefined): SwitchHistory {
             loadingMore: false,
             message: null,
           });
-      } catch {
-        if (!controller.signal.aborted) setHistoryState({ kind: 'unavailable' });
+        }
+      } catch (error) {
+        if (signal?.aborted) return;
+        if (error instanceof ApiError || error instanceof TypeError) {
+          setHistoryState({ kind: 'unavailable' });
+          return;
+        }
+        throw error;
       }
-    }
-    void loadHistory();
+    },
+    [id],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadFirstPage(EMPTY_AUDIT_FILTERS, controller.signal);
     return () => controller.abort();
-  }, [id]);
+  }, [loadFirstPage]);
+
+  async function applyHistoryFilters(): Promise<void> {
+    setAppliedFilters(historyFilters);
+    await loadFirstPage(historyFilters);
+  }
+
+  async function resetHistoryFilters(): Promise<void> {
+    setHistoryFilters(EMPTY_AUDIT_FILTERS);
+    setAppliedFilters(EMPTY_AUDIT_FILTERS);
+    await loadFirstPage(EMPTY_AUDIT_FILTERS);
+  }
 
   async function loadMoreHistory(): Promise<void> {
     if (historyState.kind !== 'ready' || historyState.nextBeforeId === null || !id) return;
@@ -43,7 +78,7 @@ export function useSwitchHistory(id: string | undefined): SwitchHistory {
     try {
       const page = await apiClient.request({
         path: `/switches/${id}/audit`,
-        query: { beforeId: historyState.nextBeforeId },
+        query: buildAuditQuery(appliedFilters, historyState.nextBeforeId),
         schema: auditPageSchema,
       });
       setHistoryState({
@@ -53,14 +88,25 @@ export function useSwitchHistory(id: string | undefined): SwitchHistory {
         loadingMore: false,
         message: null,
       });
-    } catch {
-      setHistoryState({
-        ...historyState,
-        loadingMore: false,
-        message: 'History is temporarily unavailable.',
-      });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        setHistoryState({
+          ...historyState,
+          loadingMore: false,
+          message: 'History is temporarily unavailable.',
+        });
+        return;
+      }
+      throw error;
     }
   }
 
-  return { historyState, loadMoreHistory };
+  return {
+    historyState,
+    historyFilters,
+    setHistoryFilters,
+    applyHistoryFilters,
+    resetHistoryFilters,
+    loadMoreHistory,
+  };
 }

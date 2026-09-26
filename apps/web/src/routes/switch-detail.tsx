@@ -74,7 +74,14 @@ export function SwitchDetailPage() {
     void loadSwitch();
     return () => controller.abort();
   }, [id]);
-  const { historyState, loadMoreHistory } = useSwitchHistory(id);
+  const {
+    historyState,
+    historyFilters,
+    setHistoryFilters,
+    applyHistoryFilters,
+    resetHistoryFilters,
+    loadMoreHistory,
+  } = useSwitchHistory(id);
   async function update(active: boolean): Promise<void> {
     if (state.kind !== 'ready' || !id) return;
     setState({ ...state, busy: true, message: null });
@@ -192,7 +199,14 @@ export function SwitchDetailPage() {
           ) : null}
         </CardContent>
       </Card>
-      <SwitchHistory state={historyState} onLoadMore={() => void loadMoreHistory()} />
+      <SwitchHistory
+        state={historyState}
+        filters={historyFilters}
+        onFiltersChange={setHistoryFilters}
+        onApplyFilters={applyHistoryFilters}
+        onResetFilters={resetHistoryFilters}
+        onLoadMore={() => void loadMoreHistory()}
+      />
       <SwitchSetup switchId={state.item.id} disabled={state.item.status === 'released'} />
       <HeartbeatCheckin switchId={state.item.id} active={active} />
       <TriggerConfiguration switchId={state.item.id} disabled={state.item.status === 'released'} />

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminActivityPage } from './admin-activity';
@@ -12,6 +12,8 @@ const firstPage = {
       actorEmail: 'admin@example.test',
       action: 'invite_created',
       target: 'new-user@example.test',
+      category: 'invite',
+      details: { inviteId: 'invitation-42' },
       hash: 'must-not-render',
       ip: '192.0.2.1',
       requestId: 'request-must-not-render',
@@ -29,6 +31,8 @@ const secondPage = {
       actorEmail: null,
       action: 'auth_login',
       target: null,
+      category: 'auth',
+      details: {},
     },
   ],
   nextBeforeId: null,
@@ -58,6 +62,10 @@ function renderPage(): void {
       <AdminActivityPage />
     </MemoryRouter>,
   );
+}
+
+function encodedLocalDate(value: string): string {
+  return encodeURIComponent(new Date(value).toISOString());
 }
 
 describe('AdminActivityPage', () => {
@@ -102,7 +110,7 @@ describe('AdminActivityPage', () => {
     expect(await screen.findByText('Activity log unavailable')).toBeVisible();
   });
 
-  it('applies action and text filters only after the filter form is submitted', async () => {
+  it('applies action, category, and date filters only after the filter form is submitted', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(firstPage))
@@ -115,6 +123,9 @@ describe('AdminActivityPage', () => {
     fireEvent.change(screen.getByLabelText('Search activity'), {
       target: { value: 'admin@example.test' },
     });
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'invite' } });
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-25T10:30' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-09-26T10:30' } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const filterForm = screen.getByRole('button', { name: 'Apply filters' }).closest('form');
@@ -123,7 +134,7 @@ describe('AdminActivityPage', () => {
 
     expect(await screen.findByText('No activity matches your filters.')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/audit-log?action=auth_login&q=admin%40example.test',
+      `/api/audit-log?action=auth_login&q=admin%40example.test&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}&to=${encodedLocalDate('2026-09-26T10:30')}`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });
@@ -141,10 +152,86 @@ describe('AdminActivityPage', () => {
     expect(await screen.findByText('invite_created')).toBeVisible();
     expect(screen.getByText('new-user@example.test')).toBeVisible();
     expect(screen.getByText('admin@example.test')).toBeVisible();
-    expect(screen.getByText('System')).toBeVisible();
+    expect(screen.getByText('System', { selector: 'p' })).toBeVisible();
     expect(screen.queryByText('must-not-render')).not.toBeInTheDocument();
     expect(screen.queryByText('192.0.2.1')).not.toBeInTheDocument();
     expect(screen.queryByText('request-must-not-render')).not.toBeInTheDocument();
+  });
+
+  it('renders audit details only when the row disclosure is expanded', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(firstPage));
+
+    renderPage();
+
+    expect(await screen.findByText('invite_created')).toBeVisible();
+    expect(screen.getByText(/"inviteId"/)).not.toBeVisible();
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText(/"inviteId": "invitation-42"/)).toBeVisible();
+  });
+
+  it('keeps applied category and date filters when loading another page', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse(secondPage));
+
+    renderPage();
+
+    await screen.findByText('invite_created');
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'invite' } });
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-25T10:30' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await screen.findByText('invite_created');
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'auth' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(await screen.findByText('auth_login')).toBeVisible();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/audit-log?beforeId=42&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}`,
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+  });
+
+  it('downloads CSV and JSON exports with the active filters', async () => {
+    const csvResponse = new Response('id,timestamp', { headers: { 'content-type': 'text/csv' } });
+    const jsonExportResponse = new Response('{"items":[]}', {
+      headers: { 'content-type': 'application/json' },
+    });
+    const csvBlob = vi.spyOn(csvResponse, 'blob');
+    const jsonBlob = vi.spyOn(jsonExportResponse, 'blob');
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
+      .mockResolvedValueOnce(csvResponse)
+      .mockResolvedValueOnce(jsonExportResponse);
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:activity-export'),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+
+    renderPage();
+
+    await screen.findByText('invite_created');
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'invite' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await screen.findByText('No activity matches your filters.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await waitFor(() => expect(csvBlob).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/audit-log/export?category=invite&format=csv',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export JSON' }));
+    await waitFor(() => expect(jsonBlob).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/audit-log/export?category=invite&format=json',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
   });
 
   it('clears filters and reloads the first page when reset is selected', async () => {
@@ -171,6 +258,9 @@ describe('AdminActivityPage', () => {
     expect(await screen.findByText('invite_created')).toBeVisible();
     expect(screen.getByLabelText('Action')).toHaveValue('');
     expect(screen.getByLabelText('Search activity')).toHaveValue('');
+    expect(screen.getByLabelText('Category')).toHaveValue('');
+    expect(screen.getByLabelText('From')).toHaveValue('');
+    expect(screen.getByLabelText('To')).toHaveValue('');
     expect(fetchMock).toHaveBeenLastCalledWith(
       '/api/audit-log',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),

@@ -53,6 +53,12 @@ All spacing uses a 4px base unit: `space-1` 4px, `space-2` 8px, `space-3` 12px, 
 - **States**: default, focus, disabled, invalid, submitting.
 - **Accessibility**: explicit `htmlFor`/`id`, error referenced through `aria-describedby`, no placeholder-only labels.
 
+### Select field
+
+- **Structure**: the same label and control spacing as a text input, using the shared `Select` primitive.
+- **States**: default, focus, disabled, and invalid when validation requires it.
+- **Accessibility**: explicit `htmlFor`/`id`; the first option describes the unfiltered state.
+
 ### Card
 
 - **Structure**: header, optional description, content.
