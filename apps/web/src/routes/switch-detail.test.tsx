@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SwitchDetailPage } from './switch-detail';
@@ -14,6 +14,8 @@ const item = {
   releasePolicy: 'fail_deadly',
   heartbeatStartedAt: null,
   nextDeadline: null,
+  createdAt: '2026-01-01T03:04:05.000Z',
+  updatedAt: '2026-01-02T03:04:05.000Z',
 };
 
 function renderPage(): void {
@@ -29,6 +31,10 @@ function renderPage(): void {
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+}
+
+function errorResponse(status: number): Response {
+  return new Response(null, { status });
 }
 
 describe('SwitchDetailPage', () => {
@@ -56,6 +62,7 @@ describe('SwitchDetailPage', () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(item))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
       .mockResolvedValueOnce(jsonResponse({ ok: true, status: 'active' }));
     renderPage();
 
@@ -63,7 +70,7 @@ describe('SwitchDetailPage', () => {
     expect(await screen.findByText(/Switch armed/)).toBeVisible();
 
     expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
+      3,
       `/api/switches/${item.id}/arm`,
       expect.objectContaining({
         method: 'POST',
@@ -71,5 +78,143 @@ describe('SwitchDetailPage', () => {
         credentials: 'include',
       }),
     );
+  });
+
+  it('shows loading history while the first audit page is pending', async () => {
+    let resolveHistory: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(item))
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveHistory = resolve;
+          }),
+      );
+    renderPage();
+
+    expect(await screen.findByText('Loading history…')).toBeVisible();
+    resolveHistory?.(jsonResponse({ items: [], nextBeforeId: null }));
+    expect(await screen.findByText('No recorded activity for this switch.')).toBeVisible();
+  });
+
+  it('loads, appends, and presents switch history without blocking lifecycle controls', async () => {
+    let resolveMore: ((response: Response) => void) | undefined;
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(item))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [
+            {
+              id: 12,
+              timestamp: '2026-01-03T03:04:05.000Z',
+              actorId: 'actor-1',
+              actorEmail: 'owner@example.test',
+              action: 'switch_armed',
+              target: item.id,
+            },
+          ],
+          nextBeforeId: 12,
+        }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveMore = resolve;
+          }),
+      );
+    renderPage();
+
+    expect(await screen.findByText('History')).toBeVisible();
+    expect(screen.getByText('switch_armed')).toBeVisible();
+    expect(screen.getByText(item.id)).toBeVisible();
+    expect(screen.getByText('owner@example.test')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      `/api/switches/${item.id}/audit`,
+      expect.objectContaining({ credentials: 'include' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(screen.getByRole('button', { name: 'Loading more…' })).toBeDisabled();
+    resolveMore?.(
+      jsonResponse({
+        items: [
+          {
+            id: 11,
+            timestamp: '2026-01-02T03:04:05.000Z',
+            actorId: null,
+            actorEmail: null,
+            action: 'switch_updated',
+            target: null,
+          },
+        ],
+        nextBeforeId: null,
+      }),
+    );
+
+    expect(await screen.findByText('switch_updated')).toBeVisible();
+    expect(screen.getByText('Unknown actor')).toBeVisible();
+    expect(screen.getByText('switch_armed')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+  });
+
+  it('keeps prior history and controls available when another audit page fails', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(item))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          items: [
+            {
+              id: 12,
+              timestamp: '2026-01-03T03:04:05.000Z',
+              actorId: 'actor-1',
+              actorEmail: 'owner@example.test',
+              action: 'switch_armed',
+              target: item.id,
+            },
+          ],
+          nextBeforeId: 12,
+        }),
+      )
+      .mockResolvedValueOnce(errorResponse(500));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    expect(await screen.findByText('History is temporarily unavailable.')).toBeVisible();
+    expect(screen.getByText('switch_armed')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
+  });
+
+  it('shows an inline unavailable message when the first audit page fails', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(item))
+      .mockResolvedValueOnce(errorResponse(500));
+    renderPage();
+
+    expect(await screen.findByText('History is temporarily unavailable.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+  });
+
+  it('shows empty history independently from the loaded switch', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(item))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }));
+    renderPage();
+
+    expect(await screen.findByText('No recorded activity for this switch.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
+  });
+
+  it('preserves the switch missing state when the detail request returns 404', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorResponse(404))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }));
+    renderPage();
+
+    expect(await screen.findByRole('heading', { name: 'Switch not found' })).toBeVisible();
+    await waitFor(() => expect(screen.queryByText('History')).not.toBeInTheDocument());
   });
 });

@@ -8,6 +8,8 @@ import { SwitchSetup } from '@/components/switches/switch-setup';
 import { HeartbeatCheckin } from '@/components/switches/heartbeat-checkin';
 import { TriggerConfiguration } from '@/components/switches/trigger-configuration';
 import { SwitchSettings } from '@/components/switches/switch-settings';
+import { SwitchHistory } from '@/components/switches/switch-history';
+import { useSwitchHistory } from '@/components/switches/use-switch-history';
 import { apiClient, ApiError } from '@/lib/api-client';
 
 const switchSchema = z.object({
@@ -21,6 +23,8 @@ const switchSchema = z.object({
   releasePolicy: z.string(),
   heartbeatStartedAt: z.string().datetime().nullable(),
   nextDeadline: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
 });
 const operationSchema = z.object({ ok: z.literal(true), status: z.enum(['active', 'paused']) });
 type Switch = z.infer<typeof switchSchema>;
@@ -46,7 +50,7 @@ export function SwitchDetailPage() {
   const [state, setState] = useState<State>({ kind: 'loading' });
   useEffect(() => {
     const controller = new AbortController();
-    async function load(): Promise<void> {
+    async function loadSwitch(): Promise<void> {
       if (!id || !z.string().uuid().safeParse(id).success) {
         setState({ kind: 'missing' });
         return;
@@ -67,9 +71,10 @@ export function SwitchDetailPage() {
           );
       }
     }
-    void load();
+    void loadSwitch();
     return () => controller.abort();
   }, [id]);
+  const { historyState, loadMoreHistory } = useSwitchHistory(id);
   async function update(active: boolean): Promise<void> {
     if (state.kind !== 'ready' || !id) return;
     setState({ ...state, busy: true, message: null });
@@ -187,13 +192,19 @@ export function SwitchDetailPage() {
           ) : null}
         </CardContent>
       </Card>
+      <SwitchHistory state={historyState} onLoadMore={() => void loadMoreHistory()} />
       <SwitchSetup switchId={state.item.id} disabled={state.item.status === 'released'} />
       <HeartbeatCheckin switchId={state.item.id} active={active} />
       <TriggerConfiguration switchId={state.item.id} disabled={state.item.status === 'released'} />
       <SwitchSettings
         item={state.item}
         onUpdated={item =>
-          setState({ kind: 'ready', item, busy: false, message: 'Settings saved.' })
+          setState({
+            kind: 'ready',
+            item: { ...state.item, ...item },
+            busy: false,
+            message: 'Settings saved.',
+          })
         }
       />
     </div>
