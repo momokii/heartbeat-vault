@@ -14,6 +14,7 @@ import { registerOpenRegistrationRoute } from './routes/register.js';
 import { registerSwitchRoutes } from './routes/switches.js';
 import { registerHeartbeatRoutes } from './routes/heartbeat.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
+import { registerAuditLogRoutes, registerSwitchAuditRoutes } from './routes/audit-log.js';
 
 export type BuildServerOptions = {
   readonly pool: Pool;
@@ -58,6 +59,8 @@ export async function buildServer(
   await registerSwitchRoutes(app, pool);
   await registerHeartbeatRoutes(app, pool);
   await registerTriggerRoutes(app, pool);
+  await registerAuditLogRoutes(app, pool);
+  await registerSwitchAuditRoutes(app, pool);
 
   return app;
 }
