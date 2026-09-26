@@ -39,6 +39,8 @@ export function SwitchSettings({
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   async function save(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -72,18 +74,22 @@ export function SwitchSettings({
   }
   async function remove(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    const confirmation = new FormData(event.currentTarget).get('confirmation');
     if (confirmation !== item.title) {
-      setMessage('Type the exact switch name to confirm deletion.');
+      setDeleteError('Type the exact switch name to confirm deletion.');
       return;
     }
-    setMessage(null);
+    setDeleteError(null);
     setConfirmingDelete(true);
   }
   async function confirmRemove(): Promise<void> {
+    if (confirmation !== item.title) {
+      setConfirmingDelete(false);
+      setDeleteError('The typed name no longer matches. Type the exact switch name again.');
+      return;
+    }
     setConfirmingDelete(false);
     setBusy(true);
-    setMessage(null);
+    setDeleteError(null);
     try {
       await apiClient.request({
         method: 'DELETE',
@@ -92,7 +98,7 @@ export function SwitchSettings({
       });
       navigate('/');
     } catch {
-      setMessage('This switch could not be deleted. Released switches are immutable.');
+      setDeleteError('This switch could not be deleted. Released switches are immutable.');
       setBusy(false);
     }
   }
@@ -201,6 +207,11 @@ export function SwitchSettings({
               <Input
                 id="delete-confirmation"
                 name="confirmation"
+                value={confirmation}
+                onChange={event => {
+                  setConfirmation(event.target.value);
+                  setConfirmingDelete(false);
+                }}
                 disabled={busy || item.status === 'released'}
               />
               <FieldGuidance
@@ -209,6 +220,11 @@ export function SwitchSettings({
                 example={`Type “${item.title}” exactly.`}
               />
             </div>
+            {deleteError ? (
+              <p role="alert" className="text-sm text-[var(--color-destructive)]">
+                {deleteError}
+              </p>
+            ) : null}
             <Button
               type="submit"
               variant="destructive"
@@ -216,16 +232,37 @@ export function SwitchSettings({
             >
               Delete switch
             </Button>
-            {confirmingDelete ? (
+          </form>
+          {confirmingDelete ? (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+              onClick={() => setConfirmingDelete(false)}
+            >
               <div
                 role="alertdialog"
+                aria-modal="true"
                 aria-label={`Confirm deletion of ${item.title}`}
-                className="space-y-2 rounded-md border border-[var(--color-destructive)] p-3"
+                onClick={event => event.stopPropagation()}
+                onKeyDown={event => {
+                  if (event.key === 'Escape') setConfirmingDelete(false);
+                }}
+                className="w-full max-w-md space-y-3 rounded-lg border border-[var(--color-destructive)] bg-[var(--color-background)] p-5"
               >
-                <p className="text-sm font-medium">
+                <p className="text-base font-semibold">
                   Permanently delete “{item.title}”? This cannot be undone.
                 </p>
-                <div className="flex gap-2">
+                <p className="text-sm text-[var(--color-muted-foreground)]">
+                  Its recipients, sealed payload, and history are removed with it.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    autoFocus
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    Cancel
+                  </Button>
                   <Button
                     type="button"
                     variant="destructive"
@@ -234,17 +271,10 @@ export function SwitchSettings({
                   >
                     {busy ? 'Deleting…' : 'Yes, delete it'}
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setConfirmingDelete(false)}
-                  >
-                    Cancel
-                  </Button>
                 </div>
               </div>
-            ) : null}
-          </form>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

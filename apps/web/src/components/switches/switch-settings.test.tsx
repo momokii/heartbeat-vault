@@ -74,6 +74,24 @@ describe('SwitchSettings', () => {
     );
   });
 
+  it('shows an error inside the delete card when the typed title is wrong', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ok: true }));
+    renderSettings();
+
+    fireEvent.change(screen.getByLabelText('Type “Recovery plan” to delete'), {
+      target: { value: 'Wrong name' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete switch' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Type the exact switch name to confirm deletion.',
+    );
+    expect(
+      screen.queryByRole('alertdialog', { name: 'Confirm deletion of Recovery plan' }),
+    ).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('keeps deletion on the typed-title DELETE contract', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ok: true }));
     renderSettings();
@@ -113,6 +131,31 @@ describe('SwitchSettings', () => {
     ).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(
+      screen.queryByRole('alertdialog', { name: 'Confirm deletion of Recovery plan' }),
+    ).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      `/api/switches/${item.id}`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('dismisses the confirmation and blocks deletion when the typed name changes', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ok: true }));
+    renderSettings();
+
+    fireEvent.change(screen.getByLabelText('Type “Recovery plan” to delete'), {
+      target: { value: 'Recovery plan' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete switch' }));
+    expect(
+      await screen.findByRole('alertdialog', { name: 'Confirm deletion of Recovery plan' }),
+    ).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText('Type “Recovery plan” to delete'), {
+      target: { value: 'Recovery plan!' },
+    });
 
     expect(
       screen.queryByRole('alertdialog', { name: 'Confirm deletion of Recovery plan' }),
