@@ -64,6 +64,13 @@
       "when": 1790476800000,
       "tag": "0008_audit_details",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790563200000,
+      "tag": "0009_export_jobs",
+      "breakpoints": true
     }
   ]
 }

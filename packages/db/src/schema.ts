@@ -357,3 +357,24 @@ export const heartbeatLinks = pgTable('heartbeat_links', {
     .notNull()
     .default(sql`clock_timestamp()`),
 });
+
+// ── export_jobs ──────────────────────────────────────────────────────────
+export const exportJobs = pgTable('export_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .default(sql`clock_timestamp()`),
+  requestedBy: uuid('requested_by')
+    .notNull()
+    .references(() => users.id),
+  scopeType: text('scope_type').notNull(),
+  switchId: uuid('switch_id').references(() => switches.id, { onDelete: 'set null' }),
+  format: text('format').notNull(),
+  filters: jsonb('filters')
+    .notNull()
+    .default(sql`'{}'::jsonb`),
+  rowCount: integer('row_count'),
+  status: text('status').notNull(),
+  errorCode: text('error_code'),
+});
