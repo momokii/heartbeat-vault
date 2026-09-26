@@ -134,12 +134,11 @@ describe('SwitchDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      `/api/switches/${item.id}/audit`,
+      `/api/switches/${item.id}/audit?limit=10`,
       expect.objectContaining({ credentials: 'include' }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
-    expect(screen.getByRole('button', { name: 'Loading more…' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     resolveMore?.(
       jsonResponse({
         items: [
@@ -160,8 +159,9 @@ describe('SwitchDetailPage', () => {
 
     expect(await screen.findByText('Switch updated')).toBeVisible();
     expect(screen.getByText('Unknown actor')).toBeVisible();
-    expect(screen.getByText('Switch armed')).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Switch armed')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
   });
 
   it('keeps prior history and controls available when another audit page fails', async () => {
@@ -187,7 +187,7 @@ describe('SwitchDetailPage', () => {
       .mockResolvedValueOnce(errorResponse(500));
     renderPage();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
     expect(await screen.findByText('History is temporarily unavailable.')).toBeVisible();
     expect(screen.getByText('Switch armed')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();

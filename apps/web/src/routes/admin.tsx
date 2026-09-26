@@ -5,6 +5,8 @@ import {
   UserPasswordReset,
   type PasswordResetResult,
 } from '@/components/admin/user-password-reset';
+import { ListPagination } from '@/components/list/list-pagination';
+import { ListSearchInput } from '@/components/list/list-search-input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -48,6 +50,9 @@ export function AdminPage() {
   const [passwordResetResult, setPasswordResetResult] = useState<PasswordResetResult>({
     kind: 'idle',
   });
+  const [userSearch, setUserSearch] = useState('');
+  const [userPageSize, setUserPageSize] = useState(10);
+  const [userPage, setUserPage] = useState(0);
   const loadUsers = useCallback(async (signal?: AbortSignal): Promise<void> => {
     try {
       const users = await apiClient.request({
@@ -140,6 +145,17 @@ export function AdminPage() {
         </Link>
       </section>
     );
+  const normalizedUserSearch = userSearch.trim().toLocaleLowerCase();
+  const visibleUsers = state.users.filter(user =>
+    user.email.toLocaleLowerCase().includes(normalizedUserSearch),
+  );
+  const userTotalPages = Math.max(1, Math.ceil(visibleUsers.length / userPageSize));
+  const userCurrentPage = Math.min(userPage, userTotalPages - 1);
+  const pagedUsers = visibleUsers.slice(
+    userCurrentPage * userPageSize,
+    userCurrentPage * userPageSize + userPageSize,
+  );
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <Link to="/" className="text-sm font-medium underline underline-offset-4">
@@ -230,26 +246,55 @@ export function AdminPage() {
             {state.users.length} registered account{state.users.length === 1 ? '' : 's'}.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <ul className="divide-y">
-            <li className="sr-only">Registered users</li>
-            {state.users.map(user => (
-              <li
-                key={user.id}
-                className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
-              >
-                <span>{user.email}</span>
-                <UserPasswordReset
-                  userId={user.id}
-                  email={user.email}
-                  role={user.role}
-                  isSelf={auth.kind === 'authenticated' && auth.user.id === user.id}
-                  result={passwordResetResult}
-                  onCreatePasswordReset={createPasswordReset}
-                />
-              </li>
-            ))}
-          </ul>
+        <CardContent className="space-y-4">
+          <ListSearchInput
+            id="user-search"
+            value={userSearch}
+            onChange={value => {
+              setUserSearch(value);
+              setUserPage(0);
+            }}
+            placeholder="Search by email"
+          />
+          {visibleUsers.length === 0 ? (
+            <p className="text-sm text-[var(--color-muted-foreground)]">
+              No users match your search.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              <li className="sr-only">Registered users</li>
+              {pagedUsers.map(user => (
+                <li
+                  key={user.id}
+                  className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
+                >
+                  <span>{user.email}</span>
+                  <UserPasswordReset
+                    userId={user.id}
+                    email={user.email}
+                    role={user.role}
+                    isSelf={auth.kind === 'authenticated' && auth.user.id === user.id}
+                    result={passwordResetResult}
+                    onCreatePasswordReset={createPasswordReset}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+          <ListPagination
+            idPrefix="users"
+            pageSize={userPageSize}
+            onPageSizeChange={size => {
+              setUserPageSize(size);
+              setUserPage(0);
+            }}
+            canPrev={userCurrentPage > 0}
+            onPrev={() => setUserPage(userCurrentPage - 1)}
+            canNext={userCurrentPage + 1 < userTotalPages}
+            onNext={() => setUserPage(userCurrentPage + 1)}
+            shownFrom={visibleUsers.length === 0 ? 0 : userCurrentPage * userPageSize + 1}
+            shownTo={userCurrentPage * userPageSize + visibleUsers.length}
+          />
         </CardContent>
       </Card>
     </div>

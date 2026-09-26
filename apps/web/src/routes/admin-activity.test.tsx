@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminActivityPage } from './admin-activity';
+import { applyReportDateShortcut } from '@/lib/reports-contract';
 
 const firstPage = {
   items: [
@@ -133,7 +134,7 @@ describe('AdminActivityPage', () => {
 
     expect(await screen.findByText('No activity matches your filters.')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
-      `/api/audit-log?q=admin%40example.test&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}&to=${encodedLocalDate('2026-09-26T10:30')}`,
+      `/api/audit-log?q=admin%40example.test&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}&to=${encodedLocalDate('2026-09-26T10:30')}&limit=10`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });
@@ -168,7 +169,7 @@ describe('AdminActivityPage', () => {
     expect(screen.getByText(/"inviteId": "invitation-42"/)).toBeVisible();
   });
 
-  it('keeps applied category and date filters when loading another page', async () => {
+  it('keeps applied category and date filters when navigating to the next page', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(firstPage))
@@ -183,11 +184,11 @@ describe('AdminActivityPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
     await screen.findByText('Invitation created');
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'auth' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 
     expect(await screen.findByText('Signed in')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
-      `/api/audit-log?beforeId=42&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}`,
+      `/api/audit-log?beforeId=42&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}&limit=10`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });
@@ -211,16 +212,22 @@ describe('AdminActivityPage', () => {
     await screen.findByText('Invitation created');
     fireEvent.click(screen.getByRole('button', { name: 'Export…' }));
     expect(await screen.findByText('Export report')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
     await waitFor(() => expect(csvBlob).toHaveBeenCalledOnce());
     const lastCall = fetchMock.mock.calls.at(-1)!;
     expect(lastCall[0]).toBe('/api/reports/exports');
     expect(lastCall[1]).toMatchObject({ method: 'POST', credentials: 'include' });
-    expect(JSON.parse(String(lastCall[1]?.body ?? '{}'))).toEqual({
-      format: 'csv',
-      scope: 'global',
-    });
+    const exportedBody = JSON.parse(String(lastCall[1]?.body ?? '{}')) as {
+      format: string;
+      scope: string;
+      from: string;
+      to: string;
+    };
+    expect(exportedBody).toMatchObject({ format: 'csv', scope: 'global' });
+    expect(exportedBody.from).toBe(new Date(applyReportDateShortcut('today').from).toISOString());
+    expect(exportedBody.to).toBe(new Date(applyReportDateShortcut('today').to).toISOString());
   });
 
   it('clears filters and reloads the first page when reset is selected', async () => {
@@ -249,26 +256,42 @@ describe('AdminActivityPage', () => {
     expect(screen.getByLabelText('From')).toHaveValue('');
     expect(screen.getByLabelText('To')).toHaveValue('');
     expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/audit-log',
+      '/api/audit-log?limit=10',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });
 
-  it('appends the next cursor page when more activity is requested', async () => {
+  it('paginates with next and previous while keeping the chosen page size', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(firstPage))
-      .mockResolvedValueOnce(jsonResponse(secondPage));
+      .mockResolvedValueOnce(jsonResponse(secondPage))
+      .mockResolvedValueOnce(jsonResponse(firstPage))
+      .mockResolvedValueOnce(jsonResponse(firstPage));
 
     renderPage();
 
     await screen.findByText('Invitation created');
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 
     expect(await screen.findByText('Signed in')).toBeVisible();
-    expect(screen.getByText('Invitation created')).toBeVisible();
+    expect(screen.queryByText('Invitation created')).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/audit-log?beforeId=42',
+      '/api/audit-log?beforeId=42&limit=10',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(await screen.findByText('Invitation created')).toBeVisible();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/audit-log?limit=10',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    );
+
+    fireEvent.change(screen.getByLabelText('Rows per page'), { target: { value: '25' } });
+    await screen.findByText('Invitation created');
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/audit-log?limit=25',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });

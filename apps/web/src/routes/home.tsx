@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
+import { ListPagination } from '@/components/list/list-pagination';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -60,6 +61,8 @@ export function HomePage() {
   const [state, setState] = useState<DashboardState>({ kind: 'loading' });
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -102,6 +105,12 @@ export function HomePage() {
     switchItem =>
       switchItem.title.toLocaleLowerCase().includes(normalizedSearch) &&
       (statusFilter === 'all' || switchItem.status === statusFilter),
+  );
+  const totalPages = Math.max(1, Math.ceil(visibleSwitches.length / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pagedSwitches = visibleSwitches.slice(
+    currentPage * pageSize,
+    currentPage * pageSize + pageSize,
   );
 
   return (
@@ -157,7 +166,10 @@ export function HomePage() {
                 id="switch-search"
                 type="search"
                 value={search}
-                onChange={event => setSearch(event.target.value)}
+                onChange={event => {
+                  setSearch(event.target.value);
+                  setPage(0);
+                }}
                 placeholder="Search by title"
               />
             </div>
@@ -168,7 +180,10 @@ export function HomePage() {
                 value={statusFilter}
                 onChange={event => {
                   const parsed = StatusFilterSchema.safeParse(event.target.value);
-                  if (parsed.success) setStatusFilter(parsed.data);
+                  if (parsed.success) {
+                    setStatusFilter(parsed.data);
+                    setPage(0);
+                  }
                 }}
                 className="flex h-9 w-full rounded-md border bg-transparent px-3 text-sm"
               >
@@ -189,7 +204,7 @@ export function HomePage() {
             </Card>
           ) : (
             <section aria-label="Your switches" className="grid gap-4">
-              {visibleSwitches.map(switchItem => (
+              {pagedSwitches.map(switchItem => (
                 <Card key={switchItem.id}>
                   <CardHeader className="gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -223,6 +238,20 @@ export function HomePage() {
               ))}
             </section>
           )}
+          <ListPagination
+            idPrefix="dashboard"
+            pageSize={pageSize}
+            onPageSizeChange={size => {
+              setPageSize(size);
+              setPage(0);
+            }}
+            canPrev={currentPage > 0}
+            onPrev={() => setPage(currentPage - 1)}
+            canNext={currentPage + 1 < totalPages}
+            onNext={() => setPage(currentPage + 1)}
+            shownFrom={visibleSwitches.length === 0 ? 0 : currentPage * pageSize + 1}
+            shownTo={currentPage * pageSize + pagedSwitches.length}
+          />
         </>
       )}
     </div>

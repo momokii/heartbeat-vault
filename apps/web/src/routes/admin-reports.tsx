@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ExportDialog } from '@/components/reports/export-dialog';
+import { ListPagination } from '@/components/list/list-pagination';
+import { ListSearchInput } from '@/components/list/list-search-input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -37,6 +39,7 @@ const EMPTY_FILTERS = {
   switchId: '',
   status: '' as ReportStatusFilter,
   format: '' as ReportFormatFilter,
+  query: '',
 };
 
 function statusLabel(job: ExportJob): string {
@@ -51,12 +54,21 @@ function reportLabel(job: ExportJob): string {
 
 export function AdminReportsPage() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [state, setState] = useState<ReportsState>({ kind: 'loading' });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [switchOptions, setSwitchOptions] = useState<readonly SwitchOption[]>([]);
+  const [pageSize, setPageSize] = useState(10);
+  const [cursors, setCursors] = useState<(number | null)[]>([null]);
+  const [page, setPage] = useState(0);
 
-  const loadFirstPage = useCallback(
-    async (nextFilters: typeof EMPTY_FILTERS, signal?: AbortSignal): Promise<void> => {
+  const loadPage = useCallback(
+    async (
+      nextFilters: typeof EMPTY_FILTERS,
+      cursor: number | null,
+      size: number,
+      signal?: AbortSignal,
+    ): Promise<void> => {
       setState({ kind: 'loading' });
       try {
         const response = await apiClient.request({
@@ -66,6 +78,9 @@ export function AdminReportsPage() {
             switchId: nextFilters.switchId || undefined,
             status: nextFilters.status || undefined,
             format: nextFilters.format || undefined,
+            q: nextFilters.query || undefined,
+            ...(cursor === null ? {} : { beforeId: cursor }),
+            limit: size,
           },
           schema: exportJobPageSchema,
           signal,
@@ -95,10 +110,8 @@ export function AdminReportsPage() {
   );
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadFirstPage(EMPTY_FILTERS, controller.signal);
-    return () => controller.abort();
-  }, [loadFirstPage]);
+    void loadPage(EMPTY_FILTERS, null, 10);
+  }, [loadPage]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -114,38 +127,34 @@ export function AdminReportsPage() {
     return () => controller.abort();
   }, []);
 
-  async function loadMore(): Promise<void> {
-    if (state.kind !== 'ready' || state.nextBeforeId === null || state.isLoadingMore) return;
-    setState({ ...state, isLoadingMore: true });
-    try {
-      const response = await apiClient.request({
-        path: '/reports/exports',
-        query: {
-          beforeId: state.nextBeforeId,
-          scope: filters.scope || undefined,
-          switchId: filters.switchId || undefined,
-          status: filters.status || undefined,
-          format: filters.format || undefined,
-        },
-        schema: exportJobPageSchema,
-      });
-      setState(current =>
-        current.kind === 'ready'
-          ? {
-              kind: 'ready',
-              items: [...current.items, ...response.items],
-              nextBeforeId: response.nextBeforeId,
-              isLoadingMore: false,
-            }
-          : current,
-      );
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setState({ kind: error.status === 401 || error.status === 403 ? 'forbidden' : 'error' });
-        return;
-      }
-      throw error;
-    }
+  async function goToNext(): Promise<void> {
+    if (state.kind !== 'ready' || state.nextBeforeId === null) return;
+    const cursor = state.nextBeforeId;
+    setCursors(current => [...current.slice(0, page + 1), cursor]);
+    setPage(page + 1);
+    await loadPage(appliedFilters, cursor, pageSize);
+  }
+
+  async function goToPrev(): Promise<void> {
+    if (page === 0) return;
+    const cursor = cursors[page - 1] ?? null;
+    setPage(page - 1);
+    await loadPage(appliedFilters, cursor, pageSize);
+  }
+
+  async function changePageSize(size: number): Promise<void> {
+    setPageSize(size);
+    setCursors([null]);
+    setPage(0);
+    await loadPage(appliedFilters, null, size);
+  }
+
+  function updateFilters(next: typeof EMPTY_FILTERS): void {
+    setFilters(next);
+    setAppliedFilters(next);
+    setCursors([null]);
+    setPage(0);
+    void loadPage(next, null, pageSize);
   }
 
   if (state.kind === 'loading') {
@@ -198,7 +207,13 @@ export function AdminReportsPage() {
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ListSearchInput
+              id="reports-search"
+              value={filters.query}
+              onChange={value => updateFilters({ ...filters, query: value })}
+              placeholder="Requester or switch title"
+            />
             <div className="space-y-2">
               <Label htmlFor="reports-scope">Report type</Label>
               <Select
@@ -206,13 +221,11 @@ export function AdminReportsPage() {
                 value={filters.scope}
                 onChange={event => {
                   const value = event.currentTarget.value as ReportScopeFilter;
-                  const next = {
+                  updateFilters({
                     ...filters,
                     scope: value,
                     switchId: value === 'switch' ? filters.switchId : '',
-                  };
-                  setFilters(next);
-                  void loadFirstPage(next);
+                  });
                 }}
               >
                 <option value="">All types</option>
@@ -227,9 +240,7 @@ export function AdminReportsPage() {
                   id="reports-switch"
                   value={filters.switchId}
                   onChange={event => {
-                    const next = { ...filters, switchId: event.currentTarget.value };
-                    setFilters(next);
-                    void loadFirstPage(next);
+                    updateFilters({ ...filters, switchId: event.currentTarget.value });
                   }}
                 >
                   <option value="">All switches</option>
@@ -248,12 +259,10 @@ export function AdminReportsPage() {
                 id="reports-status"
                 value={filters.status}
                 onChange={event => {
-                  const next = {
+                  updateFilters({
                     ...filters,
                     status: event.currentTarget.value as ReportStatusFilter,
-                  };
-                  setFilters(next);
-                  void loadFirstPage(next);
+                  });
                 }}
               >
                 <option value="">All statuses</option>
@@ -267,12 +276,10 @@ export function AdminReportsPage() {
                 id="reports-format"
                 value={filters.format}
                 onChange={event => {
-                  const next = {
+                  updateFilters({
                     ...filters,
                     format: event.currentTarget.value as ReportFormatFilter,
-                  };
-                  setFilters(next);
-                  void loadFirstPage(next);
+                  });
                 }}
               >
                 <option value="">All formats</option>
@@ -317,22 +324,23 @@ export function AdminReportsPage() {
               </table>
             </div>
           )}
-          {state.nextBeforeId !== null ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={state.isLoadingMore}
-              onClick={() => void loadMore()}
-            >
-              {state.isLoadingMore ? 'Loading more…' : 'Load more'}
-            </Button>
-          ) : null}
+          <ListPagination
+            idPrefix="reports"
+            pageSize={pageSize}
+            onPageSizeChange={size => void changePageSize(size)}
+            canPrev={page > 0}
+            onPrev={() => void goToPrev()}
+            canNext={state.nextBeforeId !== null}
+            onNext={() => void goToNext()}
+            shownFrom={page * pageSize + 1}
+            shownTo={page * pageSize + state.items.length}
+          />
         </CardContent>
       </Card>
       {dialogOpen ? (
         <ExportDialog
           onClose={() => setDialogOpen(false)}
-          onExported={() => void loadFirstPage(filters)}
+          onExported={() => void loadPage(filters, null, pageSize)}
         />
       ) : null}
     </div>

@@ -1,13 +1,11 @@
 import { AuditDetails } from '@/components/audit/audit-details';
 import { AuditFilterFields } from '@/components/audit/audit-filter-fields';
+import { ListPagination } from '@/components/list/list-pagination';
+import { ListSearchInput } from '@/components/list/list-search-input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  getAuditActionLabel,
-  getAuditCategoryLabel,
-  type AuditFilterValues,
-  type AuditItem,
-} from '@/lib/audit-contract';
+import { getAuditActionLabel, getAuditCategoryLabel, type AuditItem } from '@/lib/audit-contract';
+import type { AuditHistoryFilters, SwitchHistoryPagination } from './use-switch-history';
 
 export type AuditHistoryState =
   | { readonly kind: 'loading' }
@@ -22,11 +20,11 @@ export type AuditHistoryState =
 
 type SwitchHistoryProps = {
   readonly state: AuditHistoryState;
-  readonly filters: AuditFilterValues;
-  readonly onFiltersChange: (filters: AuditFilterValues) => void;
+  readonly filters: AuditHistoryFilters;
+  readonly onFiltersChange: (filters: AuditHistoryFilters) => void;
   readonly onApplyFilters: () => Promise<void>;
   readonly onResetFilters: () => Promise<void>;
-  readonly onLoadMore: () => void;
+  readonly pagination: SwitchHistoryPagination;
 };
 
 const timestampFormatter = new Intl.DateTimeFormat(undefined, {
@@ -40,7 +38,7 @@ export function SwitchHistory({
   onFiltersChange,
   onApplyFilters,
   onResetFilters,
-  onLoadMore,
+  pagination,
 }: SwitchHistoryProps) {
   return (
     <Card>
@@ -50,14 +48,24 @@ export function SwitchHistory({
       </CardHeader>
       <CardContent className="space-y-4">
         <form
-          className="grid gap-4 sm:grid-cols-3"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
           onSubmit={event => {
             event.preventDefault();
             void onApplyFilters();
           }}
         >
-          <AuditFilterFields idPrefix="history" filters={filters} onChange={onFiltersChange} />
-          <div className="flex flex-wrap gap-3 sm:col-span-3">
+          <ListSearchInput
+            id="history-search"
+            value={filters.query}
+            onChange={value => onFiltersChange({ ...filters, query: value })}
+            placeholder="Search by actor email"
+          />
+          <AuditFilterFields
+            idPrefix="history"
+            filters={filters}
+            onChange={next => onFiltersChange({ ...filters, ...next })}
+          />
+          <div className="flex flex-wrap gap-3 sm:col-span-2 lg:col-span-4">
             <Button type="submit">Apply filters</Button>
             <Button type="button" variant="outline" onClick={() => void onResetFilters()}>
               Reset
@@ -107,11 +115,7 @@ export function SwitchHistory({
             {state.message}
           </p>
         ) : null}
-        {state.kind === 'ready' && state.nextBeforeId !== null ? (
-          <Button type="button" variant="outline" disabled={state.loadingMore} onClick={onLoadMore}>
-            {state.loadingMore ? 'Loading more…' : 'Load more'}
-          </Button>
-        ) : null}
+        <ListPagination idPrefix="history" {...pagination} />
       </CardContent>
     </Card>
   );

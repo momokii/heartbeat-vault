@@ -109,33 +109,30 @@ export function buildExportRequest(input: {
   | { readonly ok: true; readonly body: ExportRequestBody }
   | {
       readonly ok: false;
-      readonly error: 'missing_switch' | 'invalid_dates' | 'reversed_range';
+      readonly error: 'missing_switch' | 'missing_dates' | 'invalid_dates' | 'reversed_range';
     } {
   if (input.scope === 'switch' && input.switchId === '') {
     return { ok: false, error: 'missing_switch' };
   }
-  const body: {
-    format: ReportFormat;
-    scope: ReportScope;
-    switchId?: string;
-    category?: AuditCategory;
-    from?: string;
-    to?: string;
-  } = { format: input.format, scope: input.scope };
-  const fromDate = input.from === '' ? undefined : new Date(input.from);
-  const toDate = input.to === '' ? undefined : new Date(input.to);
-  if (
-    (fromDate !== undefined && Number.isNaN(fromDate.getTime())) ||
-    (toDate !== undefined && Number.isNaN(toDate.getTime()))
-  ) {
+  if (input.from === '' || input.to === '') {
+    return { ok: false, error: 'missing_dates' };
+  }
+  const fromDate = new Date(input.from);
+  const toDate = new Date(input.to);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
     return { ok: false, error: 'invalid_dates' };
   }
-  if (fromDate !== undefined && toDate !== undefined && fromDate > toDate) {
+  if (fromDate > toDate) {
     return { ok: false, error: 'reversed_range' };
   }
-  if (input.category !== '') body.category = input.category;
-  if (fromDate !== undefined) body.from = fromDate.toISOString();
-  if (toDate !== undefined) body.to = toDate.toISOString();
+  const body: ExportRequestBody = {
+    format: input.format,
+    scope: input.scope,
+    ...(input.scope === 'switch' ? { switchId: input.switchId } : {}),
+    ...(input.category !== '' ? { category: input.category } : {}),
+    from: fromDate.toISOString(),
+    to: toDate.toISOString(),
+  };
   return { ok: true, body };
 }
 

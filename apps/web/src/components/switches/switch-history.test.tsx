@@ -89,11 +89,11 @@ describe('SwitchHistory', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
     await screen.findByText('Switch armed');
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'heartbeat' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 
     expect(await screen.findByText('Heartbeat checked in')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
-      `/api/switches/${switchItem.id}/audit?beforeId=12&category=switch&from=${encodedLocalDate('2026-01-02T03:04')}`,
+      `/api/switches/${switchItem.id}/audit?beforeId=12&category=switch&from=${encodedLocalDate('2026-01-02T03:04')}&limit=10`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });

@@ -6,6 +6,7 @@ import {
   type AdminActivityFilters,
 } from '@/components/audit/admin-activity-filter-form';
 import { ExportDialog } from '@/components/reports/export-dialog';
+import { ListPagination } from '@/components/list/list-pagination';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -46,9 +47,17 @@ export function AdminActivityPage() {
   const [appliedFilters, setAppliedFilters] = useState<AdminActivityFilters>(EMPTY_FILTERS);
   const [state, setState] = useState<ActivityState>({ kind: 'loading' });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [cursors, setCursors] = useState<(number | null)[]>([null]);
+  const [page, setPage] = useState(0);
 
-  const loadFirstPage = useCallback(
-    async (nextFilters: AdminActivityFilters, signal?: AbortSignal): Promise<void> => {
+  const loadPage = useCallback(
+    async (
+      nextFilters: AdminActivityFilters,
+      cursor: number | null,
+      size: number,
+      signal?: AbortSignal,
+    ): Promise<void> => {
       setState({ kind: 'loading' });
       try {
         const response = await apiClient.request({
@@ -56,6 +65,8 @@ export function AdminActivityPage() {
           query: {
             q: nextFilters.query || undefined,
             ...buildAuditQuery(nextFilters),
+            ...(cursor === null ? {} : { beforeId: cursor }),
+            limit: size,
           },
           schema: auditPageSchema,
           signal,
@@ -86,52 +97,46 @@ export function AdminActivityPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadFirstPage(EMPTY_FILTERS, controller.signal);
+    void loadPage(EMPTY_FILTERS, null, 10, controller.signal);
     return () => controller.abort();
-  }, [loadFirstPage]);
+  }, [loadPage]);
 
   async function applyFilters(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setAppliedFilters(filters);
-    await loadFirstPage(filters);
+    setCursors([null]);
+    setPage(0);
+    await loadPage(filters, null, pageSize);
   }
 
   async function resetFilters(): Promise<void> {
     setFilters(EMPTY_FILTERS);
     setAppliedFilters(EMPTY_FILTERS);
-    await loadFirstPage(EMPTY_FILTERS);
+    setCursors([null]);
+    setPage(0);
+    await loadPage(EMPTY_FILTERS, null, pageSize);
   }
 
-  async function loadMore(): Promise<void> {
-    if (state.kind !== 'ready' || state.nextBeforeId === null || state.isLoadingMore) return;
+  async function goToNext(): Promise<void> {
+    if (state.kind !== 'ready' || state.nextBeforeId === null) return;
+    const cursor = state.nextBeforeId;
+    setCursors(current => [...current.slice(0, page + 1), cursor]);
+    setPage(page + 1);
+    await loadPage(appliedFilters, cursor, pageSize);
+  }
 
-    setState({ ...state, isLoadingMore: true });
-    try {
-      const response = await apiClient.request({
-        path: '/audit-log',
-        query: {
-          ...buildAuditQuery(appliedFilters, state.nextBeforeId),
-          q: appliedFilters.query || undefined,
-        },
-        schema: auditPageSchema,
-      });
-      setState(current =>
-        current.kind === 'ready'
-          ? {
-              kind: 'ready',
-              items: [...current.items, ...response.items],
-              nextBeforeId: response.nextBeforeId,
-              isLoadingMore: false,
-            }
-          : current,
-      );
-    } catch (error) {
-      if (error instanceof ApiError) {
-        setState({ kind: error.status === 401 || error.status === 403 ? 'forbidden' : 'error' });
-        return;
-      }
-      throw error;
-    }
+  async function goToPrev(): Promise<void> {
+    if (page === 0) return;
+    const cursor = cursors[page - 1] ?? null;
+    setPage(page - 1);
+    await loadPage(appliedFilters, cursor, pageSize);
+  }
+
+  async function changePageSize(size: number): Promise<void> {
+    setPageSize(size);
+    setCursors([null]);
+    setPage(0);
+    await loadPage(appliedFilters, null, size);
   }
 
   if (state.kind === 'loading') {
@@ -217,16 +222,17 @@ export function AdminActivityPage() {
               ))}
             </ul>
           )}
-          {state.nextBeforeId !== null ? (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={state.isLoadingMore}
-              onClick={() => void loadMore()}
-            >
-              {state.isLoadingMore ? 'Loading more…' : 'Load more'}
-            </Button>
-          ) : null}
+          <ListPagination
+            idPrefix="activity"
+            pageSize={pageSize}
+            onPageSizeChange={size => void changePageSize(size)}
+            canPrev={page > 0}
+            onPrev={() => void goToPrev()}
+            canNext={state.nextBeforeId !== null}
+            onNext={() => void goToNext()}
+            shownFrom={page * pageSize + 1}
+            shownTo={page * pageSize + state.items.length}
+          />
         </CardContent>
       </Card>
       {dialogOpen ? <ExportDialog onClose={() => setDialogOpen(false)} /> : null}

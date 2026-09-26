@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ExportDialog } from './export-dialog';
+import { applyReportDateShortcut } from '@/lib/reports-contract';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -62,6 +63,7 @@ describe('ExportDialog', () => {
     const { onClose, onExported } = renderDialog();
 
     fireEvent.change(screen.getByLabelText('Output format'), { target: { value: 'json' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
@@ -71,10 +73,26 @@ describe('ExportDialog', () => {
     const exportCall = fetchMock.mock.calls[1]!;
     expect(exportCall[0]).toBe('/api/reports/exports');
     expect(exportCall[1]).toMatchObject({ method: 'POST', credentials: 'include' });
-    expect(JSON.parse(String(exportCall[1]?.body ?? '{}'))).toEqual({
-      format: 'json',
-      scope: 'global',
-    });
+    const parsedBody = JSON.parse(String(exportCall[1]?.body ?? '{}')) as {
+      format: string;
+      scope: string;
+      from: string;
+      to: string;
+    };
+    expect(parsedBody).toMatchObject({ format: 'json', scope: 'global' });
+    expect(parsedBody.from).toBe(new Date(applyReportDateShortcut('today').from).toISOString());
+    expect(parsedBody.to).toBe(new Date(applyReportDateShortcut('today').to).toISOString());
+  });
+
+  it('requires a date range before exporting', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([]));
+
+    renderDialog();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+
+    expect(await screen.findByText('Pick the date range you want to export.')).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a reversed date range before calling the API', async () => {
@@ -99,6 +117,7 @@ describe('ExportDialog', () => {
 
     renderDialog();
 
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
     expect(

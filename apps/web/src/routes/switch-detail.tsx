@@ -80,7 +80,7 @@ export function SwitchDetailPage() {
     setHistoryFilters,
     applyHistoryFilters,
     resetHistoryFilters,
-    loadMoreHistory,
+    historyPagination,
   } = useSwitchHistory(id);
   async function update(active: boolean): Promise<void> {
     if (state.kind !== 'ready' || !id) return;
@@ -205,7 +205,7 @@ export function SwitchDetailPage() {
         onFiltersChange={setHistoryFilters}
         onApplyFilters={applyHistoryFilters}
         onResetFilters={resetHistoryFilters}
-        onLoadMore={() => void loadMoreHistory()}
+        pagination={historyPagination}
       />
       <SwitchSetup switchId={state.item.id} disabled={state.item.status === 'released'} />
       <HeartbeatCheckin switchId={state.item.id} active={active} />

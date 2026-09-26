@@ -88,13 +88,13 @@ describe('AdminReportsPage', () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(
-        '/api/reports/exports?scope=switch',
+        '/api/reports/exports?scope=switch&limit=10',
         expect.objectContaining({ method: 'GET', credentials: 'include' }),
       ),
     );
   });
 
-  it('filters by a specific switch and keeps the switch on load more', async () => {
+  it('searches the ledger and filters by a specific switch across load more', async () => {
     const switchId = '22222222-2222-4222-8222-222222222222';
     const filteredPage = { items: [ledgerPage.items[0]], nextBeforeId: 7 };
     const fetchMock = vi
@@ -105,6 +105,7 @@ describe('AdminReportsPage', () => {
       )
       .mockResolvedValueOnce(jsonResponse(filteredPage))
       .mockResolvedValueOnce(jsonResponse(filteredPage))
+      .mockResolvedValueOnce(jsonResponse(filteredPage))
       .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }));
 
     renderPage();
@@ -113,17 +114,13 @@ describe('AdminReportsPage', () => {
     fireEvent.change(screen.getByLabelText('Report type'), { target: { value: 'switch' } });
     await screen.findByLabelText('Switch');
     fireEvent.change(screen.getByLabelText('Switch'), { target: { value: switchId } });
-
+    await screen.findByText('Switch — legacy-plan');
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'legacy' } });
+    await screen.findByText('Switch — legacy-plan');
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(
-        `/api/reports/exports?scope=switch&switchId=${switchId}`,
-        expect.objectContaining({ method: 'GET', credentials: 'include' }),
-      ),
-    );
-    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenLastCalledWith(
-        `/api/reports/exports?beforeId=7&scope=switch&switchId=${switchId}`,
+        `/api/reports/exports?scope=switch&switchId=${switchId}&q=legacy&beforeId=7&limit=10`,
         expect.objectContaining({ method: 'GET', credentials: 'include' }),
       ),
     );
@@ -148,6 +145,7 @@ describe('AdminReportsPage', () => {
     await screen.findByText('Switch — legacy-plan');
     fireEvent.click(screen.getByRole('button', { name: 'Export…' }));
     expect(await screen.findByText('Export report')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
@@ -158,7 +156,7 @@ describe('AdminReportsPage', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       5,
-      '/api/reports/exports',
+      '/api/reports/exports?limit=10',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
     expect(await screen.findByText('Switch — legacy-plan')).toBeVisible();
