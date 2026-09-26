@@ -320,9 +320,7 @@ describe('AdminPage', () => {
     );
 
     await screen.findByText(existingUser.email);
-    expect(screen.getByRole('link', { name: 'View the activity log' })).toHaveAttribute(
-      'href',
-      '/admin/activity',
-    );
+    expect(screen.getByRole('button', { name: 'Activity log' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Reports & exports' })).toBeEnabled();
   });
 });

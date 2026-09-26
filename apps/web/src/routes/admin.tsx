@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import {
   UserPasswordReset,
@@ -41,6 +41,7 @@ type InviteResult =
 
 export function AdminPage() {
   const auth = useAuth();
+  const navigate = useNavigate();
   const [state, setState] = useState<PageState>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
   const [inviteResult, setInviteResult] = useState<InviteResult>({ kind: 'idle' });
@@ -149,15 +150,17 @@ export function AdminPage() {
           Administration
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">Users and invitations</h1>
+        <div className="flex flex-wrap gap-3">
+          <Button type="button" onClick={() => navigate('/admin/activity')}>
+            Activity log
+          </Button>
+          <Button type="button" variant="outline" onClick={() => navigate('/admin/reports')}>
+            Reports &amp; exports
+          </Button>
+        </div>
         <p className="text-sm text-[var(--color-muted-foreground)]">
-          <Link to="/admin/activity" className="font-medium underline underline-offset-4">
-            View the activity log
-          </Link>{' '}
-          — every sign-in, switch change, and account action across this vault. Or{' '}
-          <Link to="/admin/reports" className="font-medium underline underline-offset-4">
-            view export reports
-          </Link>{' '}
-          to export audit data and review past exports.
+          The activity log records every sign-in, switch change, and account action across this
+          vault. Reports lists every audit export with who ran it and whether it succeeded.
         </p>
       </div>
       <Card>

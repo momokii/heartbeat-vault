@@ -29,6 +29,13 @@ const AUTHENTICATED_NAVIGATION: readonly NavigationItem[] = [
   { to: '/admin', label: 'Admin' },
   { to: '/account', label: 'Account' },
 ] as const;
+const ADMIN_NAVIGATION: readonly NavigationItem[] = [
+  { to: '/', label: 'Home' },
+  { to: '/admin', label: 'Admin' },
+  { to: '/admin/activity', label: 'Activity' },
+  { to: '/admin/reports', label: 'Reports' },
+  { to: '/account', label: 'Account' },
+] as const;
 const OkResponseSchema = z.object({ ok: z.literal(true) });
 
 function Navigation({
@@ -77,8 +84,11 @@ export function Header() {
   const auth = useAuth();
   const [logoutState, setLogoutState] = useState<LogoutState>({ kind: 'idle' });
   const isAuthenticated = auth.kind === 'authenticated';
+  const isAdmin = isAuthenticated && auth.user.role === 'admin';
   const items = isAuthenticated
-    ? AUTHENTICATED_NAVIGATION
+    ? isAdmin
+      ? ADMIN_NAVIGATION
+      : AUTHENTICATED_NAVIGATION
     : auth.kind === 'unauthenticated'
       ? PUBLIC_NAVIGATION
       : HOME_NAVIGATION;

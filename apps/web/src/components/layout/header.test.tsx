@@ -31,9 +31,31 @@ describe('Header', () => {
     await screen.findAllByRole('link', { name: 'Admin' });
     expect(screen.getAllByRole('link', { name: 'Home' })).not.toHaveLength(0);
     expect(screen.getAllByRole('link', { name: 'Account' })).not.toHaveLength(0);
+    expect(screen.getAllByRole('link', { name: 'Activity' })).not.toHaveLength(0);
+    expect(screen.getAllByRole('link', { name: 'Reports' })).not.toHaveLength(0);
     expect(screen.getAllByRole('button', { name: 'Logout' })).not.toHaveLength(0);
     expect(screen.queryAllByRole('link', { name: 'Login' })).toHaveLength(0);
     expect(screen.queryAllByRole('link', { name: 'Setup' })).toHaveLength(0);
+  });
+
+  it('hides administrative navigation from non-admin users', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ...authenticatedUser, role: 'user' }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <Header />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findAllByRole('link', { name: 'Admin' });
+    expect(screen.queryAllByRole('link', { name: 'Activity' })).toHaveLength(0);
+    expect(screen.queryAllByRole('link', { name: 'Reports' })).toHaveLength(0);
   });
 
   it('shows public navigation after the current-user probe returns 401', async () => {
