@@ -378,4 +378,35 @@ describe('cancellation', () => {
     );
     expect(auditRows.rows).toHaveLength(0);
   });
+
+  it('requires step-up when TOTP is enabled concurrently with the cancel', async () => {
+    const { userId, cookie } = await createUserAndLogin('totp-toctou-c@example.com');
+    const sid = await createActiveSwitch(userId);
+    const race = await pool.connect();
+    try {
+      await race.query('BEGIN');
+      await race.query(`UPDATE users SET totp_verified_at=clock_timestamp() WHERE id=$1`, [userId]);
+      const pending = app.inject({
+        method: 'POST',
+        url: `/api/switches/${sid}/cancel`,
+        headers: authCookie(cookie),
+      });
+      await new Promise(r => setTimeout(r, 250));
+      await race.query('COMMIT');
+      const res = await pending;
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body) as { error: string }).toMatchObject({ error: 'totp_required' });
+    } finally {
+      race.release();
+    }
+    const sw = await pool.query<{ status: string }>(`SELECT status FROM switches WHERE id=$1`, [
+      sid,
+    ]);
+    expect(sw.rows[0]!.status).toBe('active');
+    const auditRows = await pool.query(
+      `SELECT 1 FROM audit_log WHERE action='trigger_cancelled' AND target=$1`,
+      [sid],
+    );
+    expect(auditRows.rows).toHaveLength(0);
+  });
 });

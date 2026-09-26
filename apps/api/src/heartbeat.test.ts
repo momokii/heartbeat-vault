@@ -412,6 +412,38 @@ describe('manual check-in', () => {
     );
     expect(auditRows.rows).toHaveLength(0);
   });
+
+  it('requires step-up when TOTP is enabled concurrently with the check-in', async () => {
+    const { ownerId, ownerCookie, switchId } =
+      await scaffoldActiveSwitch('totp-toctou@example.com');
+    resetRateLimitForTests();
+    const race = await pool.connect();
+    try {
+      await race.query('BEGIN');
+      await race.query(`UPDATE users SET totp_verified_at=clock_timestamp() WHERE id=$1`, [
+        ownerId,
+      ]);
+      const pending = app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/check-in`,
+        headers: authCookie(ownerCookie),
+      });
+      await new Promise(r => setTimeout(r, 250));
+      await race.query('COMMIT');
+      const res = await pending;
+      expect(res.statusCode).toBe(403);
+      expect(JSON.parse(res.body) as { error: string }).toMatchObject({ error: 'totp_required' });
+    } finally {
+      race.release();
+    }
+    const heartbeats = await pool.query(`SELECT 1 FROM heartbeats WHERE switch_id=$1`, [switchId]);
+    expect(heartbeats.rows).toHaveLength(0);
+    const auditRows = await pool.query(
+      `SELECT 1 FROM audit_log WHERE action='heartbeat_checkin' AND target=$1`,
+      [switchId],
+    );
+    expect(auditRows.rows).toHaveLength(0);
+  });
 });
 
 describe('token check-in', () => {

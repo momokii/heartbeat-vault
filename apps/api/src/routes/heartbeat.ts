@@ -175,47 +175,46 @@ export async function registerHeartbeatRoutes(app: FastifyInstance, pool: Pool):
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      if (totp.totp_verified_at !== null) {
-        // Re-read the TOTP state under a row lock inside this transaction so
-        // counter advancement commits atomically with the check-in and its
-        // audit row: a failure after verification rolls the counter back,
-        // and the lock closes the concurrent-replay window.
-        const locked = await client.query<{
-          totp_verified_at: Date | null;
-          totp_secret_encrypted: Buffer | null;
-          totp_last_counter: string;
-        }>(
-          `SELECT totp_verified_at, totp_secret_encrypted, totp_last_counter
-             FROM users WHERE id=$1 FOR UPDATE`,
-          [user.id],
-        );
-        const lockedTotp = locked.rows[0]!;
-        if (lockedTotp.totp_verified_at !== null) {
-          if (!parsed.data.totpCode) {
-            await client.query('ROLLBACK');
-            return reply.status(403).send({ error: 'totp_required' });
-          }
-          let secret: string;
-          try {
-            secret = decryptTotpSecret(lockedTotp.totp_secret_encrypted!);
-          } catch {
-            await client.query('ROLLBACK');
-            return reply.status(500).send({ error: 'internal_error' });
-          }
-          const outcome = await verifyTotpCode(
-            secret,
-            parsed.data.totpCode,
-            Number(lockedTotp.totp_last_counter),
-          );
-          if (!outcome.ok) {
-            await client.query('ROLLBACK');
-            return reply.status(403).send({ error: 'totp_required' });
-          }
-          await client.query(`UPDATE users SET totp_last_counter=$1 WHERE id=$2`, [
-            outcome.step,
-            user.id,
-          ]);
+      // Re-read the TOTP state under a row lock inside this transaction and
+      // branch solely on the locked row: counter advancement commits
+      // atomically with the check-in and its audit row, TOTP enabled
+      // concurrently with this request cannot skip verification, and the
+      // lock closes the concurrent-replay window.
+      const locked = await client.query<{
+        totp_verified_at: Date | null;
+        totp_secret_encrypted: Buffer | null;
+        totp_last_counter: string;
+      }>(
+        `SELECT totp_verified_at, totp_secret_encrypted, totp_last_counter
+           FROM users WHERE id=$1 FOR UPDATE`,
+        [user.id],
+      );
+      const lockedTotp = locked.rows[0]!;
+      if (lockedTotp.totp_verified_at !== null) {
+        if (!parsed.data.totpCode) {
+          await client.query('ROLLBACK');
+          return reply.status(403).send({ error: 'totp_required' });
         }
+        let secret: string;
+        try {
+          secret = decryptTotpSecret(lockedTotp.totp_secret_encrypted!);
+        } catch {
+          await client.query('ROLLBACK');
+          return reply.status(500).send({ error: 'internal_error' });
+        }
+        const outcome = await verifyTotpCode(
+          secret,
+          parsed.data.totpCode,
+          Number(lockedTotp.totp_last_counter),
+        );
+        if (!outcome.ok) {
+          await client.query('ROLLBACK');
+          return reply.status(403).send({ error: 'totp_required' });
+        }
+        await client.query(`UPDATE users SET totp_last_counter=$1 WHERE id=$2`, [
+          outcome.step,
+          user.id,
+        ]);
       }
       await recordHeartbeat(client, id.data, 'manual', {
         actorId: user.id,

@@ -221,46 +221,45 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      if (totp.totp_verified_at !== null) {
-        // Counter advancement must share the cancellation transaction (row
-        // locked): a failure after verification rolls the counter back and
-        // the lock closes the concurrent-replay window.
-        const locked = await client.query<{
-          totp_verified_at: Date | null;
-          totp_secret_encrypted: Buffer | null;
-          totp_last_counter: string;
-        }>(
-          `SELECT totp_verified_at, totp_secret_encrypted, totp_last_counter
-             FROM users WHERE id=$1 FOR UPDATE`,
-          [user.id],
-        );
-        const lockedTotp = locked.rows[0]!;
-        if (lockedTotp.totp_verified_at !== null) {
-          if (!parsed.data.totpCode) {
-            await client.query('ROLLBACK');
-            return reply.status(403).send({ error: 'totp_required' });
-          }
-          let secret: string;
-          try {
-            secret = decryptTotpSecret(lockedTotp.totp_secret_encrypted!);
-          } catch {
-            await client.query('ROLLBACK');
-            return reply.status(500).send({ error: 'internal_error' });
-          }
-          const outcome = await verifyTotpCode(
-            secret,
-            parsed.data.totpCode,
-            Number(lockedTotp.totp_last_counter),
-          );
-          if (!outcome.ok) {
-            await client.query('ROLLBACK');
-            return reply.status(403).send({ error: 'totp_required' });
-          }
-          await client.query(`UPDATE users SET totp_last_counter=$1 WHERE id=$2`, [
-            outcome.step,
-            user.id,
-          ]);
+      // The locked re-read is authoritative: branch solely on the locked row
+      // so TOTP enabled concurrently with this request cannot skip
+      // verification, counter advancement shares this transaction (rollback
+      // on failure), and the lock closes the concurrent-replay window.
+      const locked = await client.query<{
+        totp_verified_at: Date | null;
+        totp_secret_encrypted: Buffer | null;
+        totp_last_counter: string;
+      }>(
+        `SELECT totp_verified_at, totp_secret_encrypted, totp_last_counter
+           FROM users WHERE id=$1 FOR UPDATE`,
+        [user.id],
+      );
+      const lockedTotp = locked.rows[0]!;
+      if (lockedTotp.totp_verified_at !== null) {
+        if (!parsed.data.totpCode) {
+          await client.query('ROLLBACK');
+          return reply.status(403).send({ error: 'totp_required' });
         }
+        let secret: string;
+        try {
+          secret = decryptTotpSecret(lockedTotp.totp_secret_encrypted!);
+        } catch {
+          await client.query('ROLLBACK');
+          return reply.status(500).send({ error: 'internal_error' });
+        }
+        const outcome = await verifyTotpCode(
+          secret,
+          parsed.data.totpCode,
+          Number(lockedTotp.totp_last_counter),
+        );
+        if (!outcome.ok) {
+          await client.query('ROLLBACK');
+          return reply.status(403).send({ error: 'totp_required' });
+        }
+        await client.query(`UPDATE users SET totp_last_counter=$1 WHERE id=$2`, [
+          outcome.step,
+          user.id,
+        ]);
       }
       await client.query(
         `UPDATE trigger_jobs SET state='cancelled'
