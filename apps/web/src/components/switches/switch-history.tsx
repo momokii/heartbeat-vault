@@ -2,7 +2,12 @@ import { AuditDetails } from '@/components/audit/audit-details';
 import { AuditFilterFields } from '@/components/audit/audit-filter-fields';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { AuditFilterValues, AuditItem } from '@/lib/audit-contract';
+import {
+  getAuditActionLabel,
+  getAuditCategoryLabel,
+  type AuditFilterValues,
+  type AuditItem,
+} from '@/lib/audit-contract';
 
 export type AuditHistoryState =
   | { readonly kind: 'loading' }
@@ -75,7 +80,12 @@ export function SwitchHistory({
               <li key={item.id} className="space-y-2 px-3 py-3 text-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-medium">{item.action}</p>
+                    <p className="flex flex-wrap items-center gap-2 font-medium">
+                      <span>{getAuditActionLabel(item.action)}</span>
+                      <span className="rounded bg-[var(--color-muted)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                        {getAuditCategoryLabel(item.category)}
+                      </span>
+                    </p>
                     {item.target !== null ? (
                       <p className="truncate font-mono text-xs text-[var(--color-muted-foreground)]">
                         {item.target}

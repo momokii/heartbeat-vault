@@ -231,7 +231,7 @@ describe('audit read APIs', () => {
     expect(countAfter.rows[0]?.count).toBe(countBefore.rows[0]?.count);
   });
 
-  it('enforces the global audit admin matrix and supports exact action, query, and cursor filters', async () => {
+  it('enforces the global audit admin matrix and supports category, query, and cursor filters', async () => {
     // Given
     const admin = await createUser('admin@example.com', 'admin');
     const user = await createUser('member@example.com');
@@ -252,17 +252,22 @@ describe('audit read APIs', () => {
     });
     const filtered = await app.inject({
       method: 'GET',
-      url: '/api/audit-log?action=switch_armed&q=MEMBER&limit=1',
+      url: '/api/audit-log?category=switch&q=MEMBER&limit=1',
       headers: { cookie: admin.cookie },
     });
     const fallback = await app.inject({
       method: 'GET',
-      url: '/api/audit-log?q=auth_login',
+      url: '/api/audit-log?q=other-target',
+      headers: { cookie: admin.cookie },
+    });
+    const rejectedActionFilter = await app.inject({
+      method: 'GET',
+      url: '/api/audit-log?action=switch_armed',
       headers: { cookie: admin.cookie },
     });
     const badQuery = await app.inject({
       method: 'GET',
-      url: '/api/audit-log?action=&q=',
+      url: '/api/audit-log?q=',
       headers: { cookie: admin.cookie },
     });
 
@@ -278,6 +283,8 @@ describe('audit read APIs', () => {
       actorEmail: null,
       action: 'auth_login',
     });
+    expect(rejectedActionFilter).toMatchObject({ statusCode: 400, json: expect.any(Function) });
+    expect(rejectedActionFilter.json()).toEqual({ error: 'invalid_request' });
     expect(badQuery).toMatchObject({ statusCode: 400, json: expect.any(Function) });
     expect(badQuery.json()).toEqual({ error: 'invalid_request' });
   });
@@ -306,16 +313,17 @@ describe('audit read APIs', () => {
       url: '/api/audit-log?category=trigger',
       headers: { cookie: admin.cookie },
     });
-    const derivations = await Promise.all(
-      categoryActions.map(async ([action, category]) => {
-        const itemResponse = await app.inject({
-          method: 'GET',
-          url: `/api/audit-log?action=${action}`,
-          headers: { cookie: admin.cookie },
-        });
-        return { category, item: parseAuditPage(itemResponse).items[0] };
-      }),
-    );
+    const derivedCategories = new Map<string, string>();
+    for (const category of [...new Set(categoryActions.map(([, value]) => value))]) {
+      const categoryResponse = await app.inject({
+        method: 'GET',
+        url: `/api/audit-log?category=${category}&limit=100`,
+        headers: { cookie: admin.cookie },
+      });
+      for (const item of parseAuditPage(categoryResponse).items) {
+        derivedCategories.set(item.action, item.category);
+      }
+    }
 
     // Then
     expect(response.statusCode).toBe(200);
@@ -323,9 +331,9 @@ describe('audit read APIs', () => {
       ['quorum_vote_recorded', 'trigger'],
       ['trigger_panicked', 'trigger'],
     ]);
-    expect(derivations.map(({ category, item }) => item?.category === category)).toEqual(
-      categoryActions.map(() => true),
-    );
+    expect(
+      categoryActions.map(([action, category]) => derivedCategories.get(action) === category),
+    ).toEqual(categoryActions.map(() => true));
   });
 
   it('applies inclusive UTC date filters and rejects invalid or reversed audit ranges', async () => {
@@ -409,12 +417,12 @@ describe('audit read APIs', () => {
     // When
     const response = await app.inject({
       method: 'GET',
-      url: '/api/audit-log?action=admin_settings_updated',
+      url: '/api/audit-log?category=admin',
       headers: { cookie: admin.cookie },
     });
     const legacyResponse = await app.inject({
       method: 'GET',
-      url: '/api/audit-log?action=legacy_event',
+      url: '/api/audit-log?category=system',
       headers: { cookie: admin.cookie },
     });
 

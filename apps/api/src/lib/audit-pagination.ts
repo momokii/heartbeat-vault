@@ -24,7 +24,6 @@ export const auditPaginationSchema = z.object({
 });
 
 const auditFilterSchema = {
-  action: z.string().min(1).max(100).optional(),
   q: z.string().trim().min(1).max(200).optional(),
   category: z.enum(auditCategories).optional(),
   from: auditDateSchema.optional(),
@@ -42,6 +41,7 @@ function validateDateRange(
 
 export const auditReadQuerySchema = auditPaginationSchema
   .extend(auditFilterSchema)
+  .strict()
   .superRefine(validateDateRange);
 
 export const auditExportQuerySchema = z
@@ -51,7 +51,6 @@ export const auditExportQuerySchema = z
 
 export type AuditReadFilters = {
   readonly beforeId?: number | undefined;
-  readonly action?: string | undefined;
   readonly q?: string | undefined;
   readonly category?: (typeof auditCategories)[number] | undefined;
   readonly from?: Date | undefined;
@@ -91,10 +90,9 @@ export function buildAuditPredicate(filters: AuditReadFilters, target?: string):
 
   if (target !== undefined) clauses.push(`a.target = ${add(target)}`);
   if (filters.beforeId !== undefined) clauses.push(`a.id < ${add(filters.beforeId)}`);
-  if (filters.action !== undefined) clauses.push(`a.action = ${add(filters.action)}`);
   if (filters.q !== undefined) {
     const query = add(`%${filters.q}%`);
-    clauses.push(`(a.action ILIKE ${query} OR a.target ILIKE ${query} OR u.email ILIKE ${query})`);
+    clauses.push(`(a.target ILIKE ${query} OR u.email ILIKE ${query})`);
   }
   if (filters.category !== undefined) {
     clauses.push(`${auditCategoryExpression} = ${add(filters.category)}`);

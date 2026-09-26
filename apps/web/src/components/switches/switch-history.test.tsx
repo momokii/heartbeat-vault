@@ -43,7 +43,7 @@ const secondHistoryPage = {
       timestamp: '2026-01-02T03:04:05.000Z',
       actorId: null,
       actorEmail: null,
-      action: 'heartbeat_checked_in',
+      action: 'heartbeat_checkin',
       category: 'heartbeat',
       target: switchItem.id,
       details: {},
@@ -83,15 +83,15 @@ describe('SwitchHistory', () => {
 
     renderPage();
 
-    expect(await screen.findByText('switch_armed')).toBeVisible();
+    expect(await screen.findByText('Switch armed')).toBeVisible();
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'switch' } });
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-01-02T03:04' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
-    await screen.findByText('switch_armed');
+    await screen.findByText('Switch armed');
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'heartbeat' } });
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
 
-    expect(await screen.findByText('heartbeat_checked_in')).toBeVisible();
+    expect(await screen.findByText('Heartbeat checked in')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
       `/api/switches/${switchItem.id}/audit?beforeId=12&category=switch&from=${encodedLocalDate('2026-01-02T03:04')}`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),

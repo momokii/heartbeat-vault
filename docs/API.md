@@ -25,27 +25,27 @@ The setup route returns `410 Gone` once bootstrap is complete. Empty-body probes
 
 ## Authenticated account and administration routes
 
-| Method | Path                             | Purpose                                                                                                                                  |
-| ------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/api/me`                        | Current authenticated user/session information.                                                                                          |
-| `POST` | `/api/logout`                    | Revoke the current session.                                                                                                              |
-| `POST` | `/api/account/password`          | Verify the current password, then replace it with a new 12+ character password.                                                          |
-| `GET`  | `/api/sessions`                  | List the current user's sessions (id, created/expiry times, revocation state, current-session flag; no token material).                  |
-| `POST` | `/api/sessions/revoke-all`       | Revoke all sessions for the current user.                                                                                                |
-| `GET`  | `/api/users`                     | List users; administrative access required.                                                                                              |
-| `GET`  | `/api/users/:id`                 | Read a user; permitted for that user or an administrator.                                                                                |
-| `POST` | `/api/users/:id/revoke-sessions` | Revoke a user's sessions; permitted for that user or an administrator.                                                                   |
-| `POST` | `/api/users/:id/password-reset`  | Issue a password-reset token; administrative access required.                                                                            |
-| `POST` | `/api/invites`                   | Create a user invitation; administrative access required.                                                                                |
-| `PUT`  | `/api/admin/settings`            | Set instance settings; administrative access required.                                                                                   |
-| `GET`  | `/api/audit-log`                 | Read the redacted, cursor-paginated audit log; administrative access required. Supports `action`, `q`, `category`, `from`, `to` filters. |
-| `GET`  | `/api/audit-log/export`          | Export the filtered audit log as CSV or JSON (`?format=`); administrative access required; 10,000-row cap.                               |
+| Method | Path                             | Purpose                                                                                                                                                                    |
+| ------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/me`                        | Current authenticated user/session information.                                                                                                                            |
+| `POST` | `/api/logout`                    | Revoke the current session.                                                                                                                                                |
+| `POST` | `/api/account/password`          | Verify the current password, then replace it with a new 12+ character password.                                                                                            |
+| `GET`  | `/api/sessions`                  | List the current user's sessions (id, created/expiry times, revocation state, current-session flag; no token material).                                                    |
+| `POST` | `/api/sessions/revoke-all`       | Revoke all sessions for the current user.                                                                                                                                  |
+| `GET`  | `/api/users`                     | List users; administrative access required.                                                                                                                                |
+| `GET`  | `/api/users/:id`                 | Read a user; permitted for that user or an administrator.                                                                                                                  |
+| `POST` | `/api/users/:id/revoke-sessions` | Revoke a user's sessions; permitted for that user or an administrator.                                                                                                     |
+| `POST` | `/api/users/:id/password-reset`  | Issue a password-reset token; administrative access required.                                                                                                              |
+| `POST` | `/api/invites`                   | Create a user invitation; administrative access required.                                                                                                                  |
+| `PUT`  | `/api/admin/settings`            | Set instance settings; administrative access required.                                                                                                                     |
+| `GET`  | `/api/audit-log`                 | Read the redacted, cursor-paginated audit log; administrative access required. Supports `q`, `category`, `from`, and `to` filters (unknown query parameters are rejected). |
+| `GET`  | `/api/audit-log/export`          | Export the filtered audit log as CSV or JSON (`?format=`); administrative access required; 10,000-row cap.                                                                 |
 
 ### Audit trail
 
 Every audit item carries `category` (derived from the action prefix: `auth`, `switch`, `account`, `admin`, `invite`, `2fa`, `trigger`, `heartbeat`, `delivery`, otherwise `system`) and a `details` object with allowlisted operational facts — for example `switch_created` records the created field values and `switch_updated` records `{ changes: { field: { from, to } } }`. Details never contain tokens, passwords, hashes, plaintext payloads, codes, secrets, addresses, ciphertext, IPs, or request IDs. This is enforced centrally, not by caller convention: `sanitizeAuditDetails` recursively drops sensitive keys before persistence (and therefore before hashing) and again before API/export serialization, so even a buggy caller cannot leak secrets into the log.
 
-Both `GET /api/audit-log` and `GET /api/switches/:id/audit` accept `category`, `from`, and `to` filters alongside the existing cursor pagination (`beforeId`, `limit` 1–100, default 50). `from`/`to` are ISO 8601 datetimes with explicit UTC/offset and are inclusive (`ts >= from`, `ts <= to`); invalid dates or `from > to` return `400 { "error": "invalid_request" }`. Items also expose `actorEmail` (best-effort, `null` when the actor has no user row).
+Both `GET /api/audit-log` and `GET /api/switches/:id/audit` accept `q` (case-insensitive match against the target or actor email), `category`, `from`, and `to` filters alongside the existing cursor pagination (`beforeId`, `limit` 1–100, default 50). `from`/`to` are ISO 8601 datetimes with explicit UTC/offset and are inclusive (`ts >= from`, `ts <= to`); invalid dates, `from > to`, empty `q`, or unknown query parameters return `400 { "error": "invalid_request" }`. Items also expose `actorEmail` (best-effort, `null` when the actor has no user row).
 
 `GET /api/audit-log/export?format=csv|json` accepts the same filters (no cursor), requires an administrator, queries up to 10,001 rows newest-first, and returns `400 { "error": "export_limit_exceeded" }` past 10,000 rows. JSON returns `{ "items": [...] }`; CSV columns are `id,timestamp,category,actorId,actorEmail,action,target,details` with RFC 4180 quoting and spreadsheet-formula neutralization. Responses set `Content-Disposition: attachment`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`.
 

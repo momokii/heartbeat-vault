@@ -11,6 +11,8 @@ import {
   EMPTY_AUDIT_FILTERS,
   auditPageSchema,
   buildAuditQuery,
+  getAuditActionLabel,
+  getAuditCategoryLabel,
   type AuditItem,
 } from '@/lib/audit-contract';
 import { ApiError, apiClient } from '@/lib/api-client';
@@ -27,7 +29,7 @@ type ActivityState =
       readonly isLoadingMore: boolean;
     };
 
-const EMPTY_FILTERS: AdminActivityFilters = { ...EMPTY_AUDIT_FILTERS, action: '', query: '' };
+const EMPTY_FILTERS: AdminActivityFilters = { ...EMPTY_AUDIT_FILTERS, query: '' };
 const IDLE_EXPORTS: Readonly<Record<ExportFormat, boolean>> = { csv: false, json: false };
 
 function formatActivityTime(timestamp: string): string {
@@ -62,7 +64,6 @@ export function AdminActivityPage() {
         const response = await apiClient.request({
           path: '/audit-log',
           query: {
-            action: nextFilters.action || undefined,
             q: nextFilters.query || undefined,
             ...buildAuditQuery(nextFilters),
           },
@@ -120,7 +121,6 @@ export function AdminActivityPage() {
         path: '/audit-log',
         query: {
           ...buildAuditQuery(appliedFilters, state.nextBeforeId),
-          action: appliedFilters.action || undefined,
           q: appliedFilters.query || undefined,
         },
         schema: auditPageSchema,
@@ -149,7 +149,11 @@ export function AdminActivityPage() {
     try {
       const blob = await apiClient.download({
         path: '/audit-log/export',
-        query: { ...buildAuditQuery(appliedFilters), format },
+        query: {
+          ...buildAuditQuery(appliedFilters),
+          q: appliedFilters.query || undefined,
+          format,
+        },
       });
       downloadBlob(blob, format);
     } finally {
@@ -231,7 +235,12 @@ export function AdminActivityPage() {
               {state.items.map(item => (
                 <li key={item.id} className="space-y-2 px-3 py-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium">{item.action}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{getAuditActionLabel(item.action)}</span>
+                      <span className="rounded bg-[var(--color-muted)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--color-muted-foreground)]">
+                        {getAuditCategoryLabel(item.category)}
+                      </span>
+                    </span>
                     <time
                       className="text-xs text-[var(--color-muted-foreground)]"
                       dateTime={item.timestamp}

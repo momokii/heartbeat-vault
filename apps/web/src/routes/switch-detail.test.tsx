@@ -128,7 +128,7 @@ describe('SwitchDetailPage', () => {
     renderPage();
 
     expect(await screen.findByText('History')).toBeVisible();
-    expect(screen.getByText('switch_armed')).toBeVisible();
+    expect(screen.getByText('Switch armed')).toBeVisible();
     expect(screen.getByText(item.id)).toBeVisible();
     expect(screen.getByText('owner@example.test')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
@@ -158,9 +158,9 @@ describe('SwitchDetailPage', () => {
       }),
     );
 
-    expect(await screen.findByText('switch_updated')).toBeVisible();
+    expect(await screen.findByText('Switch updated')).toBeVisible();
     expect(screen.getByText('Unknown actor')).toBeVisible();
-    expect(screen.getByText('switch_armed')).toBeVisible();
+    expect(screen.getByText('Switch armed')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Load more' })).not.toBeInTheDocument();
   });
 
@@ -189,7 +189,7 @@ describe('SwitchDetailPage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
     expect(await screen.findByText('History is temporarily unavailable.')).toBeVisible();
-    expect(screen.getByText('switch_armed')).toBeVisible();
+    expect(screen.getByText('Switch armed')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
   });
 

@@ -79,7 +79,7 @@ describe('AdminActivityPage', () => {
 
     expect(screen.getByText('Loading activity…')).toBeVisible();
     pendingActivity.resolve(jsonResponse(firstPage));
-    expect(await screen.findByText('invite_created')).toBeVisible();
+    expect(await screen.findByText('Invitation created')).toBeVisible();
   });
 
   it('shows administrator access feedback when the activity request is forbidden', async () => {
@@ -110,7 +110,7 @@ describe('AdminActivityPage', () => {
     expect(await screen.findByText('Activity log unavailable')).toBeVisible();
   });
 
-  it('applies action, category, and date filters only after the filter form is submitted', async () => {
+  it('applies search, category, and date filters only after the filter form is submitted', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(firstPage))
@@ -118,8 +118,7 @@ describe('AdminActivityPage', () => {
 
     renderPage();
 
-    await screen.findByText('invite_created');
-    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'auth_login' } });
+    await screen.findByText('Invitation created');
     fireEvent.change(screen.getByLabelText('Search activity'), {
       target: { value: 'admin@example.test' },
     });
@@ -134,7 +133,7 @@ describe('AdminActivityPage', () => {
 
     expect(await screen.findByText('No activity matches your filters.')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
-      `/api/audit-log?action=auth_login&q=admin%40example.test&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}&to=${encodedLocalDate('2026-09-26T10:30')}`,
+      `/api/audit-log?q=admin%40example.test&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}&to=${encodedLocalDate('2026-09-26T10:30')}`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
   });
@@ -149,7 +148,7 @@ describe('AdminActivityPage', () => {
 
     renderPage();
 
-    expect(await screen.findByText('invite_created')).toBeVisible();
+    expect(await screen.findByText('Invitation created')).toBeVisible();
     expect(screen.getByText('new-user@example.test')).toBeVisible();
     expect(screen.getByText('admin@example.test')).toBeVisible();
     expect(screen.getByText('System', { selector: 'p' })).toBeVisible();
@@ -163,7 +162,7 @@ describe('AdminActivityPage', () => {
 
     renderPage();
 
-    expect(await screen.findByText('invite_created')).toBeVisible();
+    expect(await screen.findByText('Invitation created')).toBeVisible();
     expect(screen.getByText(/"inviteId"/)).not.toBeVisible();
     fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText(/"inviteId": "invitation-42"/)).toBeVisible();
@@ -178,15 +177,15 @@ describe('AdminActivityPage', () => {
 
     renderPage();
 
-    await screen.findByText('invite_created');
+    await screen.findByText('Invitation created');
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'invite' } });
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-25T10:30' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
-    await screen.findByText('invite_created');
+    await screen.findByText('Invitation created');
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'auth' } });
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
 
-    expect(await screen.findByText('auth_login')).toBeVisible();
+    expect(await screen.findByText('Signed in')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
       `/api/audit-log?beforeId=42&category=invite&from=${encodedLocalDate('2026-09-25T10:30')}`,
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
@@ -214,7 +213,7 @@ describe('AdminActivityPage', () => {
 
     renderPage();
 
-    await screen.findByText('invite_created');
+    await screen.findByText('Invitation created');
     fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'invite' } });
     fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
     await screen.findByText('No activity matches your filters.');
@@ -243,8 +242,7 @@ describe('AdminActivityPage', () => {
 
     renderPage();
 
-    await screen.findByText('invite_created');
-    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'auth_login' } });
+    await screen.findByText('Invitation created');
     fireEvent.change(screen.getByLabelText('Search activity'), {
       target: { value: 'admin@example.test' },
     });
@@ -255,8 +253,7 @@ describe('AdminActivityPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
 
-    expect(await screen.findByText('invite_created')).toBeVisible();
-    expect(screen.getByLabelText('Action')).toHaveValue('');
+    expect(await screen.findByText('Invitation created')).toBeVisible();
     expect(screen.getByLabelText('Search activity')).toHaveValue('');
     expect(screen.getByLabelText('Category')).toHaveValue('');
     expect(screen.getByLabelText('From')).toHaveValue('');
@@ -275,11 +272,11 @@ describe('AdminActivityPage', () => {
 
     renderPage();
 
-    await screen.findByText('invite_created');
+    await screen.findByText('Invitation created');
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
 
-    expect(await screen.findByText('auth_login')).toBeVisible();
-    expect(screen.getByText('invite_created')).toBeVisible();
+    expect(await screen.findByText('Signed in')).toBeVisible();
+    expect(screen.getByText('Invitation created')).toBeVisible();
     expect(fetchMock).toHaveBeenLastCalledWith(
       '/api/audit-log?beforeId=42',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),

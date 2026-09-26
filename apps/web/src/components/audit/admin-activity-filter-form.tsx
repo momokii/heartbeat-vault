@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label';
 import type { AuditFilterValues } from '@/lib/audit-contract';
 
 export type AdminActivityFilters = AuditFilterValues & {
-  readonly action: string;
   readonly query: string;
 };
 
@@ -31,21 +30,14 @@ export function AdminActivityFilterForm({
         <CardDescription>Apply filters to search recorded administrative activity.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form className="grid gap-4 sm:grid-cols-2" onSubmit={onSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="activity-action">Action</Label>
-            <Input
-              id="activity-action"
-              value={filters.action}
-              onChange={event => onChange({ ...filters, action: event.currentTarget.value })}
-            />
-          </div>
+        <form className="space-y-4" onSubmit={onSubmit}>
           <div className="space-y-2">
             <Label htmlFor="activity-search">Search activity</Label>
             <Input
               id="activity-search"
               value={filters.query}
               onChange={event => onChange({ ...filters, query: event.currentTarget.value })}
+              placeholder="Target or actor email"
             />
           </div>
           <AuditFilterFields
