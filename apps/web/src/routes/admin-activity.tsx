@@ -5,6 +5,7 @@ import {
   AdminActivityFilterForm,
   type AdminActivityFilters,
 } from '@/components/audit/admin-activity-filter-form';
+import { ExportDialog } from '@/components/reports/export-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -17,7 +18,6 @@ import {
 } from '@/lib/audit-contract';
 import { ApiError, apiClient } from '@/lib/api-client';
 
-type ExportFormat = 'csv' | 'json';
 type ActivityState =
   | { readonly kind: 'loading' }
   | { readonly kind: 'forbidden' }
@@ -30,7 +30,6 @@ type ActivityState =
     };
 
 const EMPTY_FILTERS: AdminActivityFilters = { ...EMPTY_AUDIT_FILTERS, query: '' };
-const IDLE_EXPORTS: Readonly<Record<ExportFormat, boolean>> = { csv: false, json: false };
 
 function formatActivityTime(timestamp: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
@@ -42,20 +41,11 @@ function actorLabel(item: AuditItem): string {
   return item.actorEmail ?? item.actorId ?? 'System';
 }
 
-function downloadBlob(blob: Blob, format: ExportFormat): void {
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = `audit-log.${format}`;
-  link.click();
-  URL.revokeObjectURL(objectUrl);
-}
-
 export function AdminActivityPage() {
   const [filters, setFilters] = useState<AdminActivityFilters>(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState<AdminActivityFilters>(EMPTY_FILTERS);
   const [state, setState] = useState<ActivityState>({ kind: 'loading' });
-  const [exportsInFlight, setExportsInFlight] = useState(IDLE_EXPORTS);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const loadFirstPage = useCallback(
     async (nextFilters: AdminActivityFilters, signal?: AbortSignal): Promise<void> => {
@@ -144,23 +134,6 @@ export function AdminActivityPage() {
     }
   }
 
-  async function exportActivity(format: ExportFormat): Promise<void> {
-    setExportsInFlight(current => ({ ...current, [format]: true }));
-    try {
-      const blob = await apiClient.download({
-        path: '/audit-log/export',
-        query: {
-          ...buildAuditQuery(appliedFilters),
-          q: appliedFilters.query || undefined,
-          format,
-        },
-      });
-      downloadBlob(blob, format);
-    } finally {
-      setExportsInFlight(current => ({ ...current, [format]: false }));
-    }
-  }
-
   if (state.kind === 'loading') {
     return <p className="text-sm text-[var(--color-muted-foreground)]">Loading activity…</p>;
   }
@@ -209,21 +182,8 @@ export function AdminActivityPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={exportsInFlight.csv}
-              onClick={() => void exportActivity('csv')}
-            >
-              {exportsInFlight.csv ? 'Exporting CSV…' : 'Export CSV'}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={exportsInFlight.json}
-              onClick={() => void exportActivity('json')}
-            >
-              {exportsInFlight.json ? 'Exporting JSON…' : 'Export JSON'}
+            <Button type="button" onClick={() => setDialogOpen(true)}>
+              Export…
             </Button>
           </div>
           {state.items.length === 0 ? (
@@ -269,6 +229,7 @@ export function AdminActivityPage() {
           ) : null}
         </CardContent>
       </Card>
+      {dialogOpen ? <ExportDialog onClose={() => setDialogOpen(false)} /> : null}
     </div>
   );
 }

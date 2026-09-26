@@ -153,7 +153,11 @@ export function AdminPage() {
           <Link to="/admin/activity" className="font-medium underline underline-offset-4">
             View the activity log
           </Link>{' '}
-          — every sign-in, switch change, and account action across this vault.
+          — every sign-in, switch change, and account action across this vault. Or{' '}
+          <Link to="/admin/reports" className="font-medium underline underline-offset-4">
+            view export reports
+          </Link>{' '}
+          to export audit data and review past exports.
         </p>
       </div>
       <Card>

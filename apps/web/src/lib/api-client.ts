@@ -41,7 +41,9 @@ export type RequestOptions<T> = {
 };
 
 export type BlobRequestOptions = {
+  readonly method?: 'GET' | 'POST';
   readonly path: string;
+  readonly body?: unknown;
   readonly query?: Readonly<Record<string, string | number | boolean | undefined>>;
   readonly signal?: AbortSignal | undefined;
   readonly timeoutMs?: number | undefined;
@@ -159,9 +161,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
       : controller.signal;
 
     try {
+      const headers: Record<string, string> = { ...defaultHeaders };
+      if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
       const response = await fetch(url, {
-        method: 'GET',
-        headers: defaultHeaders,
+        method: opts.method ?? 'GET',
+        headers,
+        ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
         signal,
         credentials: 'include',
       });

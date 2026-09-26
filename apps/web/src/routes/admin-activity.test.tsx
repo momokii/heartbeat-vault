@@ -192,19 +192,14 @@ describe('AdminActivityPage', () => {
     );
   });
 
-  it('downloads CSV and JSON exports with the active filters', async () => {
+  it('exports through the report dialog and records the request', async () => {
     const csvResponse = new Response('id,timestamp', { headers: { 'content-type': 'text/csv' } });
-    const jsonExportResponse = new Response('{"items":[]}', {
-      headers: { 'content-type': 'application/json' },
-    });
     const csvBlob = vi.spyOn(csvResponse, 'blob');
-    const jsonBlob = vi.spyOn(jsonExportResponse, 'blob');
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(firstPage))
-      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
-      .mockResolvedValueOnce(csvResponse)
-      .mockResolvedValueOnce(jsonExportResponse);
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(csvResponse);
     vi.stubGlobal('URL', {
       createObjectURL: vi.fn(() => 'blob:activity-export'),
       revokeObjectURL: vi.fn(),
@@ -214,23 +209,18 @@ describe('AdminActivityPage', () => {
     renderPage();
 
     await screen.findByText('Invitation created');
-    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'invite' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
-    await screen.findByText('No activity matches your filters.');
+    fireEvent.click(screen.getByRole('button', { name: 'Export…' }));
+    expect(await screen.findByText('Export report')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     await waitFor(() => expect(csvBlob).toHaveBeenCalledOnce());
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/audit-log/export?category=invite&format=csv',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Export JSON' }));
-    await waitFor(() => expect(jsonBlob).toHaveBeenCalledOnce());
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/audit-log/export?category=invite&format=json',
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
-    );
+    const lastCall = fetchMock.mock.calls.at(-1)!;
+    expect(lastCall[0]).toBe('/api/reports/exports');
+    expect(lastCall[1]).toMatchObject({ method: 'POST', credentials: 'include' });
+    expect(JSON.parse(String(lastCall[1]?.body ?? '{}'))).toEqual({
+      format: 'csv',
+      scope: 'global',
+    });
   });
 
   it('clears filters and reloads the first page when reset is selected', async () => {
