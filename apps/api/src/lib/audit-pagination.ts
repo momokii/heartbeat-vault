@@ -13,7 +13,7 @@ export const auditCategories = [
   'system',
 ] as const;
 
-const auditDateSchema = z
+export const auditDateSchema = z
   .string()
   .datetime({ offset: true })
   .transform(value => new Date(value));

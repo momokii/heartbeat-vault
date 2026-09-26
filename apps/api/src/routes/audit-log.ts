@@ -6,13 +6,12 @@ import { sanitizeAuditDetails } from '../lib/audit.js';
 import { requireRole } from '../lib/roles.js';
 import {
   auditCategoryExpression,
-  auditExportQuerySchema,
   auditReadQuerySchema,
   buildAuditPredicate,
 } from '../lib/audit-pagination.js';
 import { loadSwitch } from './switches.js';
 
-type AuditRow = {
+export type AuditRow = {
   readonly id: number;
   readonly timestamp: Date;
   readonly actorId: string | null;
@@ -44,7 +43,7 @@ function serializeDetails(details: unknown): Record<string, unknown> {
   return {};
 }
 
-function serializeAuditRow(row: AuditRow): SerializedAuditRow {
+export function serializeAuditRow(row: AuditRow): SerializedAuditRow {
   return {
     id: row.id,
     timestamp: row.timestamp.toISOString(),
@@ -57,7 +56,7 @@ function serializeAuditRow(row: AuditRow): SerializedAuditRow {
   };
 }
 
-const auditSelect = `SELECT a.id, a.ts AS "timestamp", a.actor_id AS "actorId", u.email AS "actorEmail", a.action, a.target,
+export const auditSelect = `SELECT a.id, a.ts AS "timestamp", a.actor_id AS "actorId", u.email AS "actorEmail", a.action, a.target,
   ${auditCategoryExpression} AS "category", COALESCE(a.details, '{}'::jsonb) AS "details"
 FROM audit_log a
 LEFT JOIN users u ON u.id = a.actor_id`;
@@ -67,7 +66,7 @@ function quoteCsvCell(value: string): string {
   return `"${safeValue.replaceAll('"', '""')}"`;
 }
 
-function buildAuditCsv(items: readonly SerializedAuditRow[]): string {
+export function buildAuditCsv(items: readonly SerializedAuditRow[]): string {
   const header = [
     'id',
     'timestamp',
@@ -119,42 +118,6 @@ export async function registerAuditLogRoutes(app: FastifyInstance, pool: Pool): 
         items,
         nextBeforeId: items.length === limit ? (items.at(-1)?.id ?? null) : null,
       });
-    },
-  );
-
-  app.get(
-    '/api/audit-log/export',
-    { preHandler: [requireAuth, requireRole('admin')] },
-    async (request, reply) => {
-      const parsed = auditExportQuerySchema.safeParse(request.query);
-      if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
-
-      const predicate = buildAuditPredicate(parsed.data);
-      const result = await pool.query<AuditRow>(
-        `${auditSelect}
-        ${predicate.where}
-        ORDER BY a.id DESC
-        LIMIT $${predicate.parameters.length + 1}`,
-        [...predicate.parameters, 10_001],
-      );
-      if (result.rows.length > 10_000) {
-        return reply.status(400).send({ error: 'export_limit_exceeded' });
-      }
-
-      const items = result.rows.map(serializeAuditRow);
-      const headers = reply
-        .header('cache-control', 'no-store')
-        .header('x-content-type-options', 'nosniff');
-      if (parsed.data.format === 'json') {
-        return headers
-          .header('content-disposition', 'attachment; filename="audit-log.json"')
-          .type('application/json; charset=utf-8')
-          .send({ items });
-      }
-      return headers
-        .header('content-disposition', 'attachment; filename="audit-log.csv"')
-        .type('text/csv; charset=utf-8')
-        .send(buildAuditCsv(items));
     },
   );
 }
