@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { ApiError, apiClient } from '@/lib/api-client';
 import { releaseModes, releasePolicies } from './switch-new-guidance';
@@ -67,6 +67,9 @@ export function NewSwitchPage() {
   }
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      <Link to="/" className="text-sm font-medium underline underline-offset-4">
+        ← Dashboard
+      </Link>
       <div className="space-y-2">
         <p className="text-xs font-mono uppercase tracking-[0.18em] text-[var(--color-muted-foreground)]">
           New switch

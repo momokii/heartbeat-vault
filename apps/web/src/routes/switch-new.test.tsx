@@ -28,6 +28,12 @@ describe('NewSwitchPage', () => {
     expect(schedule.releaseAt.toISOString()).toBe('2026-01-04T09:04:05.000Z');
   });
 
+  it('links back to the dashboard above the creation form', () => {
+    renderPage();
+
+    expect(screen.getByRole('link', { name: '← Dashboard' })).toHaveAttribute('href', '/');
+  });
+
   it('fills the guided form with a sensible dry-run example', () => {
     renderPage();
 
