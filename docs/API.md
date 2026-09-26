@@ -39,7 +39,8 @@ The setup route returns `410 Gone` once bootstrap is complete. Empty-body probes
 | `POST` | `/api/invites`                   | Create a user invitation; administrative access required.                                                                                                                  |
 | `PUT`  | `/api/admin/settings`            | Set instance settings; administrative access required.                                                                                                                     |
 | `GET`  | `/api/audit-log`                 | Read the redacted, cursor-paginated audit log; administrative access required. Supports `q`, `category`, `from`, and `to` filters (unknown query parameters are rejected). |
-| `GET`  | `/api/audit-log/export`          | Export the filtered audit log as CSV or JSON (`?format=`); administrative access required; 10,000-row cap.                                                                 |
+| `POST` | `/api/reports/exports`           | Stream a filtered audit export (CSV/JSON) and record it in the report ledger; administrative access required; 10,000-row cap.                                              |
+| `GET`  | `/api/reports/exports`           | List the report export ledger (who exported what, when, with which filters, and the outcome); administrative access required.                                              |
 
 ### Audit trail
 
@@ -47,7 +48,15 @@ Every audit item carries `category` (derived from the action prefix: `auth`, `sw
 
 Both `GET /api/audit-log` and `GET /api/switches/:id/audit` accept `q` (case-insensitive match against the target or actor email), `category`, `from`, and `to` filters alongside the existing cursor pagination (`beforeId`, `limit` 1–100, default 50). `from`/`to` are ISO 8601 datetimes with explicit UTC/offset and are inclusive (`ts >= from`, `ts <= to`); invalid dates, `from > to`, empty `q`, or unknown query parameters return `400 { "error": "invalid_request" }`. Items also expose `actorEmail` (best-effort, `null` when the actor has no user row).
 
-`GET /api/audit-log/export?format=csv|json` accepts the same filters (no cursor), requires an administrator, queries up to 10,001 rows newest-first, and returns `400 { "error": "export_limit_exceeded" }` past 10,000 rows. JSON returns `{ "items": [...] }`; CSV columns are `id,timestamp,category,actorId,actorEmail,action,target,details` with RFC 4180 quoting and spreadsheet-formula neutralization. Responses set `Content-Disposition: attachment`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`.
+### Audit exports and reports
+
+`POST /api/reports/exports` is the single export entry point (administrative access required). Its JSON body is `{ "format": "csv" | "json", "scope": "global" | "switch", "switchId"?, "category"?, "from"?, "to"?, "q"? }` — `switchId` is mandatory when `scope` is `switch` (`404 { "error": "not_found" }` for an unknown switch). The endpoint streams the filtered audit log as the response attachment: JSON returns `{ "items": [...] }`; CSV columns are `id,timestamp,category,actorId,actorEmail,action,target,details` with RFC 4180 quoting and spreadsheet-formula neutralization. Responses set `Content-Disposition: attachment`, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`.
+
+Every export attempt is recorded in the `export_jobs` ledger: successful exports store the requester, scope, switch reference, format, requested filters, and row count; failures store an `error_code`. Exports are capped at 10,000 rows — past the cap the endpoint returns `400 { "error": "export_limit_exceeded" }` and the ledger records the attempt as `failed`. Request validation failures and unknown switches are rejected before any ledger entry is written; unexpected server errors are recorded as `failed` with `internal_error` and return `500`.
+
+`GET /api/reports/exports` (administrative access required) lists the ledger newest-first with cursor pagination (`beforeId`, `limit` 1–100, default 50) and filters `scope`, `status` (`success`/`failed`), `format`, and `switchId`; unknown query parameters are rejected. Items carry `createdAt`, `requestedByEmail`, `scopeType`, `switchId`, `switchTitle` (`null` when the switch was later deleted), `format`, `filters` (the requested category and date window), `rowCount`, `status`, and `errorCode`.
+
+In the web UI this is exposed as an **Export…** dialog on the activity log and the **Reports** page (`/admin/reports`): the dialog offers report scope (whole audit log or a specific switch), CSV/JSON output, a category, and a date range with Today / Yesterday / This week / This month shortcuts; the Reports page lists every export with who ran it, when, what it covered, the format, row count, and whether it succeeded.
 
 ### Password resets
 
