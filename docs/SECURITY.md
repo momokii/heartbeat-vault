@@ -33,6 +33,7 @@ A switch requires an encrypted payload and an accepted recipient before it can a
 - API containers run non-root; production overrides provide restart policies and resource limits.
 - Compose images and Dockerfile base images are digest-pinned. CI runs dependency audit, gitleaks, CodeQL, and release scanning. Release workflow artifacts include an SPDX SBOM and keyless cosign signing when executed on GitHub.
 - Application and migrator database roles are designed for scoped privileges; the verification script checks that they are not superusers in a running stack.
+- Audit events form a tamper-evident hash chain: each row hashes the previous hash plus its timestamp, actor, action, target, and canonical (RFC 8785) `details` JSON. The `app` role can only append and read — updates and deletes stay revoked — and `scripts/verify-security.sh` re-verifies chain continuity at rest. Details hold allowlisted operational facts only, never secrets.
 
 ## What this does not protect against
 

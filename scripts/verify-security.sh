@@ -542,7 +542,65 @@ else
     "BACKUP_ENCRYPTION_KEY not set — backup/restore lands with the installer phase; configure before first real backups."
 fi
 
-# ── 18. Hardened profile (deferred in v1 per ADR-007 / user decision) ────────
+# ── 18. Audit-chain continuity (read-only recomputation) ─────────────────────
+# Recomputes the v2 audit hash chain (SHA-256 over prev_hash | ts | actor |
+# action | target | canonical details JSON) for recent rows. Read-only: SELECT
+# only, no writes. A break means tampering or a corrupt migration.
+if [ "$STACK_DB_UP" = 1 ] && [ -f .env ] && have python3; then
+  _pgu=$(env_value POSTGRES_USER || true)
+  _pgd=$(env_value POSTGRES_DB || true)
+  _pgu=${_pgu:-heartbeat}
+  _pgd=${_pgd:-heartbeat_vault}
+  _chain_out=$(docker compose exec -T db psql -U "$_pgu" -d "$_pgd" -tA -F "$(printf '\037')" -c \
+    "SELECT id, to_char(ts AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"'), coalesce(actor_id::text,''), action, coalesce(target,''), case when details is null then '<NULL>' else details::text end, encode(prev_hash,'hex'), encode(hash,'hex') FROM (SELECT * FROM audit_log ORDER BY id DESC LIMIT 5000) s ORDER BY id ASC" 2>/dev/null |
+    python3 -c '
+import hashlib, json, sys
+prev = None
+checked = 0
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line.strip():
+        continue
+    parts = line.split("\x1f")
+    if len(parts) != 8:
+        print(f"malformed row: {line[:60]}")
+        sys.exit(2)
+    rid, ts, actor, action, target, details_text, prev_hex, rowhash = parts
+    if details_text == "<NULL>":
+        print(f"NULL details at row {rid}")
+        sys.exit(2)
+    try:
+        details = json.loads(details_text)
+    except Exception:
+        print(f"non-JSON details at row {rid}")
+        sys.exit(2)
+    if prev is not None and prev_hex != prev:
+        print(f"chain link break at row {rid}")
+        sys.exit(2)
+    canon = json.dumps(details, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    h = hashlib.sha256()
+    h.update(bytes.fromhex(prev_hex) + b"|" + ts.encode() + b"|" + actor.encode() + b"|" + action.encode() + b"|" + target.encode() + canon)
+    if h.hexdigest() != rowhash:
+        print(f"hash mismatch at row {rid}")
+        sys.exit(2)
+    prev = rowhash
+    checked += 1
+print(f"ok:{checked}")
+' 2>&1)
+  _chain_rc=$?
+  _chain_msg=$(printf '%s' "$_chain_out" | tail -n 1)
+  case "$_chain_rc:$_chain_msg" in
+    0:ok:*) add_result audit-chain "Audit hash-chain continuity (recent rows)" PASS \
+      "Recomputed ${_chain_msg#ok:} recent audit rows — chain intact, details canonical." ;;
+    *) add_result audit-chain "Audit hash-chain continuity (recent rows)" FAIL \
+      "Audit chain verification failed: ${_chain_msg} (tampering or corrupt migration — investigate before trusting the log)." ;;
+  esac
+else
+  add_result audit-chain "Audit hash-chain continuity (recent rows)" WARN \
+    "Stack (db service) not running or python3 unavailable — chain check skipped."
+fi
+
+# ── 19. Hardened profile (deferred in v1 per ADR-007 / user decision) ────────
 _hardened_services=''
 for _f in docker-compose.yml docker-compose.prod.yml; do
   [ -f "$_f" ] || continue
