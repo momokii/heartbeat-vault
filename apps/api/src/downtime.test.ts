@@ -11,6 +11,7 @@ import {
   promoteDueWaits,
   checkClockSkew,
 } from './lib/downtime.js';
+import { AUDIT_GENESIS, computeAuditHash } from './lib/audit.js';
 import { recordHeartbeat } from './routes/heartbeat.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -116,6 +117,39 @@ describe('recoverFromOutage', () => {
     );
     expect(jobs.rows).toHaveLength(1);
     expect(jobs.rows[0]!.run_at.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('writes downtime_recovery through the normal v2 audit chain with empty details', async () => {
+    const sid = await createActiveSwitch(3 * 3600, 7200);
+    await seedHeartbeatTick(5 * 3600_000);
+
+    await recoverFromOutage(pool, new Date(), 60);
+
+    const audit = await pool.query<{
+      readonly ts: Date;
+      readonly actor_id: string | null;
+      readonly action: string;
+      readonly target: string | null;
+      readonly details: Record<string, unknown>;
+      readonly prev_hash: Buffer | null;
+      readonly hash: Buffer;
+    }>(
+      `SELECT ts, actor_id, action, target, details, prev_hash, hash
+       FROM audit_log WHERE action = 'downtime_recovery' AND target = $1`,
+      [sid],
+    );
+    const row = audit.rows[0]!;
+    expect(row.details).toEqual({});
+    expect(
+      computeAuditHash(
+        row.prev_hash ?? AUDIT_GENESIS,
+        row.ts,
+        row.actor_id,
+        row.action,
+        row.target,
+        row.details,
+      ).equals(row.hash),
+    ).toBe(true);
   });
 
   it('mixed: two switches, one in grace one expired', async () => {

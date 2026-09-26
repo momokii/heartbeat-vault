@@ -14,6 +14,7 @@
 // budget — past it the worker holds dispatch (CLOCK_UNCERTAIN) instead of
 // guessing.
 import type { Pool } from 'pg';
+import { writeAudit } from './audit.js';
 import { materializeDueTriggers } from './trigger-engine.js';
 
 export { materializeDueTriggers };
@@ -76,11 +77,7 @@ export async function recoverFromOutage(
         [now, ids],
       );
       for (const id of ids) {
-        await client.query(
-          `INSERT INTO audit_log (actor_id, action, target, hash)
-           SELECT NULL, 'downtime_recovery', $1, digest('downtime_recovery:' || $1, 'sha256')`,
-          [id],
-        );
+        await writeAudit(client, { action: 'downtime_recovery', target: id, details: {} });
       }
     }
     await client.query('COMMIT');

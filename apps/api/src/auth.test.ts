@@ -6,6 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { buildServer } from './server.js';
+import { AUDIT_GENESIS, computeAuditHash } from './lib/audit.js';
 import { resetRateLimitForTests } from './lib/rate-limit.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -316,11 +317,13 @@ describe('auth core T3.2', () => {
     }
     const locked = await pool.query(`SELECT locked_until FROM users WHERE id=$1`, [userId]);
     expect(locked.rows[0].locked_until).not.toBeNull();
-    const audit = await pool.query(
-      `SELECT action FROM audit_log WHERE action='auth_lockout' AND target=$1`,
+    const audit = await pool.query<{ details: Record<string, unknown> }>(
+      `SELECT details FROM audit_log WHERE action='auth_lockout' AND target=$1`,
       [userId],
     );
     expect(audit.rowCount).toBeGreaterThanOrEqual(1);
+    expect(audit.rows[0]!.details).toEqual({ failedAttempts: 5, lockoutMinutes: 15 });
+    expect(JSON.stringify(audit.rows[0]!.details)).not.toContain('badpassword123');
     resetRateLimitForTests();
     const whileLocked = await app.inject({
       method: 'POST',
@@ -356,29 +359,55 @@ describe('auth core T3.2', () => {
       actor_id: string | null;
       action: string;
       target: string | null;
+      details: Record<string, unknown>;
       prev_hash: Buffer | null;
       hash: Buffer;
-    }>(`SELECT id, ts, actor_id, action, target, prev_hash, hash FROM audit_log ORDER BY id ASC`);
+    }>(
+      `SELECT id, ts, actor_id, action, target, details, prev_hash, hash FROM audit_log ORDER BY id ASC`,
+    );
 
     expect(rows.rowCount).toBeGreaterThanOrEqual(2);
-    let prev = Buffer.alloc(32, 0);
+    let prev = AUDIT_GENESIS;
     for (const row of rows.rows) {
-      const expectedPrev = row.prev_hash ? (row.prev_hash as Buffer) : Buffer.alloc(32, 0);
+      const expectedPrev = row.prev_hash ?? AUDIT_GENESIS;
       expect(Buffer.compare(expectedPrev, prev)).toBe(0);
-      const ts = new Date(row.ts);
-      const computed = createHash('sha256')
-        .update(prev)
-        .update('|')
-        .update(ts.toISOString())
-        .update('|')
-        .update(row.actor_id ?? '')
-        .update('|')
-        .update(row.action)
-        .update('|')
-        .update(row.target ?? '')
-        .digest();
-      expect(Buffer.compare(computed, row.hash as Buffer)).toBe(0);
-      prev = row.hash as Buffer;
+      const computed = computeAuditHash(
+        prev,
+        row.ts,
+        row.actor_id,
+        row.action,
+        row.target,
+        row.details,
+      );
+      expect(Buffer.compare(computed, row.hash)).toBe(0);
+      prev = row.hash;
     }
+
+    await pool.query(`UPDATE audit_log SET details = '{"tampered":true}'::jsonb WHERE id = $1`, [
+      rows.rows[0]!.id,
+    ]);
+    const tampered = await pool.query<{
+      readonly ts: Date;
+      readonly actor_id: string | null;
+      readonly action: string;
+      readonly target: string | null;
+      readonly details: Record<string, unknown>;
+      readonly prev_hash: Buffer | null;
+      readonly hash: Buffer;
+    }>(
+      `SELECT ts, actor_id, action, target, details, prev_hash, hash FROM audit_log WHERE id = $1`,
+      [rows.rows[0]!.id],
+    );
+    const changed = tampered.rows[0]!;
+    expect(
+      computeAuditHash(
+        changed.prev_hash ?? AUDIT_GENESIS,
+        changed.ts,
+        changed.actor_id,
+        changed.action,
+        changed.target,
+        changed.details,
+      ).equals(changed.hash),
+    ).toBe(false);
   });
 });

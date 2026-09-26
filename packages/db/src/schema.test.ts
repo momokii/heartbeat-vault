@@ -5,6 +5,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const POSTGRES_IMAGE = 'postgres:17-alpine';
@@ -154,7 +155,7 @@ describe('db schema migrations', () => {
         /permission denied/i,
       );
       await expect(
-        appPool.query(`SELECT * FROM audit_log WHERE id=$1`, [id]),
+        appPool.query(`SELECT details FROM audit_log WHERE id=$1`, [id]),
       ).resolves.toBeDefined();
       await expect(
         appPool.query(`INSERT INTO audit_log (action, hash) VALUES ('allowed', '\\xbeef')`),
@@ -165,6 +166,150 @@ describe('db schema migrations', () => {
 
     const after = await pool.query(`SELECT count(*)::int as c FROM audit_log`);
     expect(after.rows[0].c).toBe(2);
+  });
+
+  it('stores audit details as non-null JSONB with an empty-object default', async () => {
+    const column = await pool.query<{
+      readonly data_type: string;
+      readonly udt_name: string;
+      readonly is_nullable: string;
+      readonly column_default: string | null;
+    }>(`
+      SELECT data_type, udt_name, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'audit_log' AND column_name = 'details'
+    `);
+    expect(column.rows[0]?.data_type).toBe('jsonb');
+    expect(column.rows[0]?.udt_name).toBe('jsonb');
+    expect(column.rows[0]?.is_nullable).toBe('NO');
+    expect(column.rows[0]?.column_default).toContain("'{}'::jsonb");
+
+    await pool.query(`INSERT INTO audit_log (action, hash) VALUES ('default-details', '\\x01')`);
+    const row = await pool.query<{ readonly details: Record<string, unknown> }>(
+      `SELECT details FROM audit_log WHERE action = 'default-details'`,
+    );
+    expect(row.rows[0]?.details).toEqual({});
+  });
+
+  it('keeps default-detail audit rows in a v2-continuous chain', async () => {
+    const firstTs = new Date('2026-09-26T12:00:00.000Z');
+    const secondTs = new Date('2026-09-26T12:00:01.000Z');
+    const genesis = Buffer.alloc(32, 0);
+    const firstHash = createHash('sha256')
+      .update(genesis)
+      .update('|')
+      .update(firstTs.toISOString())
+      .update('|')
+      .update('')
+      .update('|')
+      .update('first')
+      .update('|')
+      .update('')
+      .update(Buffer.from('{}', 'utf8'))
+      .digest();
+    const secondHash = createHash('sha256')
+      .update(firstHash)
+      .update('|')
+      .update(secondTs.toISOString())
+      .update('|')
+      .update('')
+      .update('|')
+      .update('second')
+      .update('|')
+      .update('')
+      .update(Buffer.from('{}', 'utf8'))
+      .digest();
+
+    await pool.query(
+      `INSERT INTO audit_log (ts, action, prev_hash, hash) VALUES ($1, 'first', $2, $3), ($4, 'second', $3, $5)`,
+      [firstTs, genesis, firstHash, secondTs, secondHash],
+    );
+    const rows = await pool.query<{
+      readonly prev_hash: Buffer | null;
+      readonly hash: Buffer;
+      readonly details: Record<string, unknown>;
+    }>(`SELECT prev_hash, hash, details FROM audit_log ORDER BY id ASC`);
+
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows[0]?.details).toEqual({});
+    expect(rows.rows[1]?.details).toEqual({});
+    expect(rows.rows[0]?.hash.equals(firstHash)).toBe(true);
+    expect(rows.rows[1]?.prev_hash?.equals(rows.rows[0]!.hash)).toBe(true);
+    expect(rows.rows[1]?.hash.equals(secondHash)).toBe(true);
+  });
+
+  it('backfills legacy audit rows to empty details and recomputes a v2 chain', async () => {
+    const migrationSql = await readFile(
+      join(__dirname, '..', 'drizzle', '0008_audit_details.sql'),
+      'utf8',
+    );
+    await pool.query('CREATE SCHEMA audit_details_backfill_test');
+    await pool.query('SET search_path TO audit_details_backfill_test, public');
+    try {
+      await pool.query(`
+        CREATE TABLE audit_log (
+          id serial PRIMARY KEY,
+          ts timestamp with time zone NOT NULL,
+          actor_id uuid,
+          action text NOT NULL,
+          target text,
+          prev_hash bytea,
+          hash bytea NOT NULL
+        )
+      `);
+      const firstTs = new Date('2026-09-26T12:00:00.123Z');
+      const secondTs = new Date('2026-09-26T12:00:01.456Z');
+      await pool.query(
+        `INSERT INTO audit_log (ts, action, target, hash) VALUES
+          ($1, 'legacy.first', 'one', '\\x01'), ($2, 'legacy.second', 'two', '\\x02')`,
+        [firstTs, secondTs],
+      );
+
+      await pool.query(migrationSql);
+
+      const rows = await pool.query<{
+        readonly ts: Date;
+        readonly action: string;
+        readonly target: string | null;
+        readonly prev_hash: Buffer;
+        readonly hash: Buffer;
+        readonly details: Record<string, unknown>;
+      }>('SELECT ts, action, target, prev_hash, hash, details FROM audit_log ORDER BY id ASC');
+      const genesis = Buffer.alloc(32, 0);
+      const firstHash = createHash('sha256')
+        .update(genesis)
+        .update('|')
+        .update(firstTs.toISOString())
+        .update('|')
+        .update('')
+        .update('|')
+        .update('legacy.first')
+        .update('|')
+        .update('one')
+        .update(Buffer.from('{}', 'utf8'))
+        .digest();
+      const secondHash = createHash('sha256')
+        .update(firstHash)
+        .update('|')
+        .update(secondTs.toISOString())
+        .update('|')
+        .update('')
+        .update('|')
+        .update('legacy.second')
+        .update('|')
+        .update('two')
+        .update(Buffer.from('{}', 'utf8'))
+        .digest();
+
+      expect(rows.rows.map(row => row.details)).toEqual([{}, {}]);
+      expect(rows.rows[0]?.prev_hash.equals(genesis)).toBe(true);
+      expect(rows.rows[0]?.hash.equals(firstHash)).toBe(true);
+      expect(rows.rows[1]?.prev_hash.equals(firstHash)).toBe(true);
+      expect(rows.rows[1]?.hash.equals(secondHash)).toBe(true);
+    } finally {
+      await pool.query('RESET search_path');
+      await pool.query('DROP SCHEMA audit_details_backfill_test CASCADE');
+    }
   });
 
   it('stores timestamptz in UTC via clock_timestamp()', async () => {

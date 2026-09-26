@@ -36,6 +36,7 @@
     "@simplewebauthn/server": "13.3.3",
     "drizzle-orm": "0.45.2",
     "fastify": "5.12.5",
+    "json-canonicalize": "3.0.1",
     "ky": "1.14.0",
     "nodemailer": "10.0.10",
     "otplib": "13.5.0",
