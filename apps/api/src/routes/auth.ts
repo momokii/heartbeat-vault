@@ -181,11 +181,12 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
     const tokenHash = (request as unknown as { sessionTokenHash: string })
       .sessionTokenHash as string;
     const user = request.user!;
-    await pool.query(`UPDATE sessions SET revoked_at = clock_timestamp() WHERE token_hash=$1`, [
-      tokenHash,
-    ]);
     const client = await pool.connect();
     try {
+      await client.query('BEGIN');
+      await client.query(`UPDATE sessions SET revoked_at = clock_timestamp() WHERE token_hash=$1`, [
+        tokenHash,
+      ]);
       await writeAudit(client, {
         actorId: user.id,
         action: 'auth_logout',
@@ -194,6 +195,10 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         requestId: request.id,
         details: { scope: 'current_session' },
       });
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
     } finally {
       client.release();
     }
@@ -234,12 +239,13 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
 
   app.post('/api/sessions/revoke-all', { preHandler: requireAuth }, async (request, reply) => {
     const u = request.user!;
-    await pool.query(
-      `UPDATE sessions SET revoked_at = clock_timestamp() WHERE user_id=$1 AND revoked_at IS NULL`,
-      [u.id],
-    );
     const client = await pool.connect();
     try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE sessions SET revoked_at = clock_timestamp() WHERE user_id=$1 AND revoked_at IS NULL`,
+        [u.id],
+      );
       await writeAudit(client, {
         actorId: u.id,
         action: 'auth_revoke_all',
@@ -248,6 +254,10 @@ export async function registerAuthRoutes(app: FastifyInstance, pool: Pool): Prom
         requestId: request.id,
         details: { scope: 'all_sessions' },
       });
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
     } finally {
       client.release();
     }

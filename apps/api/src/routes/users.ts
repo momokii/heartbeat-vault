@@ -53,13 +53,13 @@ export async function registerUserRoutes(app: FastifyInstance, pool: Pool): Prom
         return reply.status(404).send({ error: 'not_found' });
       }
 
-      const revoked = await pool.query(
-        `UPDATE sessions SET revoked_at = clock_timestamp() WHERE user_id = $1 AND revoked_at IS NULL`,
-        [id],
-      );
-
       const client = await pool.connect();
       try {
+        await client.query('BEGIN');
+        const revoked = await client.query(
+          `UPDATE sessions SET revoked_at = clock_timestamp() WHERE user_id = $1 AND revoked_at IS NULL`,
+          [id],
+        );
         await writeAudit(client, {
           actorId: actor.id,
           action: 'sessions_revoked',
@@ -68,6 +68,10 @@ export async function registerUserRoutes(app: FastifyInstance, pool: Pool): Prom
           requestId: request.id,
           details: { scope: 'user_sessions', revokedCount: revoked.rowCount ?? 0 },
         });
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
       } finally {
         client.release();
       }

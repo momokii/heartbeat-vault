@@ -102,29 +102,30 @@ export function registerWebauthnRegistrationRoutes(
       }
 
       const transports = registrationInfo.credential.transports?.join(',') ?? null;
-      await pool.query(
-        `INSERT INTO webauthn_credentials
-           (id, user_id, public_key, counter, transports, device_type, backed_up)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT (id) DO UPDATE SET
-           public_key=EXCLUDED.public_key, counter=EXCLUDED.counter,
-           transports=EXCLUDED.transports, device_type=EXCLUDED.device_type,
-           backed_up=EXCLUDED.backed_up`,
-        [
-          registrationInfo.credential.id,
-          user.id,
-          Buffer.from(registrationInfo.credential.publicKey),
-          registrationInfo.credential.counter,
-          transports,
-          registrationInfo.credentialDeviceType,
-          registrationInfo.credentialBackedUp,
-        ],
-      );
-      await pool.query(`UPDATE sessions SET webauthn_challenge=NULL WHERE token_hash=$1`, [
-        request.sessionTokenHash,
-      ]);
       const client = await pool.connect();
       try {
+        await client.query('BEGIN');
+        await client.query(
+          `INSERT INTO webauthn_credentials
+             (id, user_id, public_key, counter, transports, device_type, backed_up)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (id) DO UPDATE SET
+             public_key=EXCLUDED.public_key, counter=EXCLUDED.counter,
+             transports=EXCLUDED.transports, device_type=EXCLUDED.device_type,
+             backed_up=EXCLUDED.backed_up`,
+          [
+            registrationInfo.credential.id,
+            user.id,
+            Buffer.from(registrationInfo.credential.publicKey),
+            registrationInfo.credential.counter,
+            transports,
+            registrationInfo.credentialDeviceType,
+            registrationInfo.credentialBackedUp,
+          ],
+        );
+        await client.query(`UPDATE sessions SET webauthn_challenge=NULL WHERE token_hash=$1`, [
+          request.sessionTokenHash,
+        ]);
         await writeAudit(client, {
           actorId: user.id,
           action: '2fa_webauthn_registered',
@@ -133,6 +134,10 @@ export function registerWebauthnRegistrationRoutes(
           requestId: request.id,
           details: { method: 'webauthn' },
         });
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
       } finally {
         client.release();
       }

@@ -206,6 +206,19 @@ describe('audit chain v2', () => {
     expect(recomputed.equals(changed.hash)).toBe(false);
   });
 
+  it('rejects writes outside a caller transaction so the chain cannot fork', async () => {
+    const client = await pool.connect();
+    try {
+      await expect(writeAudit(client, { action: 'audit.test' })).rejects.toThrow(
+        'writeAudit requires an active caller transaction',
+      );
+    } finally {
+      client.release();
+    }
+    const rows = await pool.query('SELECT id FROM audit_log');
+    expect(rows.rows).toHaveLength(0);
+  });
+
   it('serializes parallel writers into one linear chain', async () => {
     const first = await pool.connect();
     const second = await pool.connect();

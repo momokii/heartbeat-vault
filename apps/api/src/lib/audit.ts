@@ -76,6 +76,16 @@ export async function writeAudit(
   }
   const cleanDetails = sanitized as Record<string, unknown>;
 
+  // SAVEPOINT succeeds only inside a caller-owned transaction block, so a
+  // bare-client caller fails fast here instead of forking the hash chain.
+  // (txid_current_if_assigned() stays null for read-only statements and
+  // cannot reliably detect a transaction block.)
+  try {
+    await client.query('SAVEPOINT hv_audit_guard');
+    await client.query('RELEASE SAVEPOINT hv_audit_guard');
+  } catch {
+    throw new Error('writeAudit requires an active caller transaction');
+  }
   await client.query('SELECT pg_advisory_xact_lock($1)', [AUDIT_CHAIN_LOCK]);
   const prevRes = await client.query<{ hash: Buffer }>(
     `SELECT hash FROM audit_log ORDER BY id DESC LIMIT 1`,
