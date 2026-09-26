@@ -74,7 +74,9 @@ export function ExportDialog({ onClose, onExported }: ExportDialogProps) {
       setError(
         request.error === 'missing_switch'
           ? 'Choose a switch to export.'
-          : 'Enter a valid date range.',
+          : request.error === 'reversed_range'
+            ? 'The start of the date range must be before the end.'
+            : 'Enter a valid date range.',
       );
       return;
     }

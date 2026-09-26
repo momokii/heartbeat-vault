@@ -58,7 +58,9 @@ describe('AdminReportsPage', () => {
   beforeEach(() => vi.restoreAllMocks());
 
   it('lists exported reports with type, actor, format, range, and status', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(ledgerPage));
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(ledgerPage))
+      .mockResolvedValueOnce(jsonResponse([]));
 
     renderPage();
 
@@ -76,6 +78,7 @@ describe('AdminReportsPage', () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(ledgerPage))
+      .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }));
 
     renderPage();
@@ -91,10 +94,46 @@ describe('AdminReportsPage', () => {
     );
   });
 
+  it('filters by a specific switch and keeps the switch on load more', async () => {
+    const switchId = '22222222-2222-4222-8222-222222222222';
+    const filteredPage = { items: [ledgerPage.items[0]], nextBeforeId: 7 };
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(ledgerPage))
+      .mockResolvedValueOnce(
+        jsonResponse([{ id: switchId, title: 'legacy-plan', ownerEmail: 'owner@example.test' }]),
+      )
+      .mockResolvedValueOnce(jsonResponse(filteredPage))
+      .mockResolvedValueOnce(jsonResponse(filteredPage))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }));
+
+    renderPage();
+
+    await screen.findByText('Switch — legacy-plan');
+    fireEvent.change(screen.getByLabelText('Report type'), { target: { value: 'switch' } });
+    await screen.findByLabelText('Switch');
+    fireEvent.change(screen.getByLabelText('Switch'), { target: { value: switchId } });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        `/api/reports/exports?scope=switch&switchId=${switchId}`,
+        expect.objectContaining({ method: 'GET', credentials: 'include' }),
+      ),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        `/api/reports/exports?beforeId=7&scope=switch&switchId=${switchId}`,
+        expect.objectContaining({ method: 'GET', credentials: 'include' }),
+      ),
+    );
+  });
+
   it('opens the export dialog and reloads the ledger after a successful export', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(ledgerPage))
+      .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(new Response('id', { headers: { 'content-type': 'text/csv' } }))
       .mockResolvedValueOnce(jsonResponse(ledgerPage));
@@ -111,14 +150,14 @@ describe('AdminReportsPage', () => {
     expect(await screen.findByText('Export report')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       '/api/reports/exports',
       expect.objectContaining({ method: 'POST', credentials: 'include' }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      5,
       '/api/reports/exports',
       expect.objectContaining({ method: 'GET', credentials: 'include' }),
     );
@@ -126,9 +165,9 @@ describe('AdminReportsPage', () => {
   });
 
   it('shows the empty state before any exports exist', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      jsonResponse({ items: [], nextBeforeId: null }),
-    );
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
+      .mockResolvedValueOnce(jsonResponse([]));
 
     renderPage();
 

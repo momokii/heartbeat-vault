@@ -107,7 +107,10 @@ export function buildExportRequest(input: {
   readonly to: string;
 }):
   | { readonly ok: true; readonly body: ExportRequestBody }
-  | { readonly ok: false; readonly error: 'missing_switch' | 'invalid_dates' } {
+  | {
+      readonly ok: false;
+      readonly error: 'missing_switch' | 'invalid_dates' | 'reversed_range';
+    } {
   if (input.scope === 'switch' && input.switchId === '') {
     return { ok: false, error: 'missing_switch' };
   }
@@ -119,18 +122,20 @@ export function buildExportRequest(input: {
     from?: string;
     to?: string;
   } = { format: input.format, scope: input.scope };
-  if (input.scope === 'switch') body.switchId = input.switchId;
+  const fromDate = input.from === '' ? undefined : new Date(input.from);
+  const toDate = input.to === '' ? undefined : new Date(input.to);
+  if (
+    (fromDate !== undefined && Number.isNaN(fromDate.getTime())) ||
+    (toDate !== undefined && Number.isNaN(toDate.getTime()))
+  ) {
+    return { ok: false, error: 'invalid_dates' };
+  }
+  if (fromDate !== undefined && toDate !== undefined && fromDate > toDate) {
+    return { ok: false, error: 'reversed_range' };
+  }
   if (input.category !== '') body.category = input.category;
-  if (input.from !== '') {
-    const fromDate = new Date(input.from);
-    if (Number.isNaN(fromDate.getTime())) return { ok: false, error: 'invalid_dates' };
-    body.from = fromDate.toISOString();
-  }
-  if (input.to !== '') {
-    const toDate = new Date(input.to);
-    if (Number.isNaN(toDate.getTime())) return { ok: false, error: 'invalid_dates' };
-    body.to = toDate.toISOString();
-  }
+  if (fromDate !== undefined) body.from = fromDate.toISOString();
+  if (toDate !== undefined) body.to = toDate.toISOString();
   return { ok: true, body };
 }
 

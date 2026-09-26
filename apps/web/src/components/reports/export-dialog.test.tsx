@@ -77,6 +77,21 @@ describe('ExportDialog', () => {
     });
   });
 
+  it('rejects a reversed date range before calling the API', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse([]));
+
+    renderDialog();
+
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-09-10T10:00' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-09-01T10:00' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+
+    expect(
+      await screen.findByText('The start of the date range must be before the end.'),
+    ).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the size error returned by the API', async () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse([]))

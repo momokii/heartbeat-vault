@@ -10,9 +10,11 @@ import {
   describeExportFilters,
   exportJobPageSchema,
   formatReportDate,
+  switchOptionSchema,
   type ExportJob,
   type ReportFormat,
   type ReportScope,
+  type SwitchOption,
 } from '@/lib/reports-contract';
 
 type ReportStatusFilter = '' | 'success' | 'failed';
@@ -32,6 +34,7 @@ type ReportsState =
 
 const EMPTY_FILTERS = {
   scope: '' as ReportScopeFilter,
+  switchId: '',
   status: '' as ReportStatusFilter,
   format: '' as ReportFormatFilter,
 };
@@ -50,6 +53,7 @@ export function AdminReportsPage() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [state, setState] = useState<ReportsState>({ kind: 'loading' });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [switchOptions, setSwitchOptions] = useState<readonly SwitchOption[]>([]);
 
   const loadFirstPage = useCallback(
     async (nextFilters: typeof EMPTY_FILTERS, signal?: AbortSignal): Promise<void> => {
@@ -59,6 +63,7 @@ export function AdminReportsPage() {
           path: '/reports/exports',
           query: {
             scope: nextFilters.scope || undefined,
+            switchId: nextFilters.switchId || undefined,
             status: nextFilters.status || undefined,
             format: nextFilters.format || undefined,
           },
@@ -95,6 +100,20 @@ export function AdminReportsPage() {
     return () => controller.abort();
   }, [loadFirstPage]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    apiClient
+      .request({
+        path: '/switches',
+        query: { all: 1 },
+        schema: switchOptionSchema.array(),
+        signal: controller.signal,
+      })
+      .then(rows => setSwitchOptions([...rows].sort((a, b) => a.title.localeCompare(b.title))))
+      .catch(() => setSwitchOptions([]));
+    return () => controller.abort();
+  }, []);
+
   async function loadMore(): Promise<void> {
     if (state.kind !== 'ready' || state.nextBeforeId === null || state.isLoadingMore) return;
     setState({ ...state, isLoadingMore: true });
@@ -104,6 +123,7 @@ export function AdminReportsPage() {
         query: {
           beforeId: state.nextBeforeId,
           scope: filters.scope || undefined,
+          switchId: filters.switchId || undefined,
           status: filters.status || undefined,
           format: filters.format || undefined,
         },
@@ -185,9 +205,11 @@ export function AdminReportsPage() {
                 id="reports-scope"
                 value={filters.scope}
                 onChange={event => {
+                  const value = event.currentTarget.value as ReportScopeFilter;
                   const next = {
                     ...filters,
-                    scope: event.currentTarget.value as ReportScopeFilter,
+                    scope: value,
+                    switchId: value === 'switch' ? filters.switchId : '',
                   };
                   setFilters(next);
                   void loadFirstPage(next);
@@ -198,6 +220,28 @@ export function AdminReportsPage() {
                 <option value="switch">Switch reports</option>
               </Select>
             </div>
+            {filters.scope === 'switch' ? (
+              <div className="space-y-2">
+                <Label htmlFor="reports-switch">Switch</Label>
+                <Select
+                  id="reports-switch"
+                  value={filters.switchId}
+                  onChange={event => {
+                    const next = { ...filters, switchId: event.currentTarget.value };
+                    setFilters(next);
+                    void loadFirstPage(next);
+                  }}
+                >
+                  <option value="">All switches</option>
+                  {switchOptions.map(option => (
+                    <option key={option.id} value={option.id}>
+                      {option.title}
+                      {option.ownerEmail ? ` — ${option.ownerEmail}` : ''}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="reports-status">Status</Label>
               <Select
