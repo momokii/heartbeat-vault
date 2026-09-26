@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { ListPagination } from '@/components/list/list-pagination';
+import { ListSearchInput } from '@/components/list/list-search-input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient, ApiError } from '@/lib/api-client';
 
@@ -160,19 +160,16 @@ export function HomePage() {
             aria-label="Filter switches"
             className="grid gap-4 rounded-md border p-4 sm:grid-cols-2"
           >
-            <div className="space-y-2">
-              <Label htmlFor="switch-search">Search switches</Label>
-              <Input
-                id="switch-search"
-                type="search"
-                value={search}
-                onChange={event => {
-                  setSearch(event.target.value);
-                  setPage(0);
-                }}
-                placeholder="Search by title"
-              />
-            </div>
+            <ListSearchInput
+              id="switch-search"
+              label="Search switches"
+              value={search}
+              onChange={value => {
+                setSearch(value);
+                setPage(0);
+              }}
+              placeholder="Search by title"
+            />
             <div className="space-y-2">
               <Label htmlFor="switch-status">Status</Label>
               <select

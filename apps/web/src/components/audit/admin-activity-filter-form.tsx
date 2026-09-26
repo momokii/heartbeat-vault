@@ -1,9 +1,8 @@
 import type { FormEvent } from 'react';
 import { AuditFilterFields } from '@/components/audit/audit-filter-fields';
+import { ListSearchInput } from '@/components/list/list-search-input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import type { AuditFilterValues } from '@/lib/audit-contract';
 
 export type AdminActivityFilters = AuditFilterValues & {
@@ -31,15 +30,13 @@ export function AdminActivityFilterForm({
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={onSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="activity-search">Search activity</Label>
-            <Input
-              id="activity-search"
-              value={filters.query}
-              onChange={event => onChange({ ...filters, query: event.currentTarget.value })}
-              placeholder="Target or actor email"
-            />
-          </div>
+          <ListSearchInput
+            id="activity-search"
+            label="Search activity"
+            value={filters.query}
+            onChange={value => onChange({ ...filters, query: value })}
+            placeholder="Target or actor email"
+          />
           <AuditFilterFields
             idPrefix="activity"
             filters={filters}

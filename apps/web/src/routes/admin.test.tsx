@@ -323,4 +323,37 @@ describe('AdminPage', () => {
     expect(screen.getByRole('button', { name: 'Activity log' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Reports & exports' })).toBeEnabled();
   });
+
+  it('paginates the users list with a correct range on later pages', async () => {
+    const users = Array.from({ length: 12 }, (_, index) => ({
+      id: `11111111-1111-4111-8111-${String(index + 1).padStart(12, '0')}`,
+      email: `user${index + 1}@example.test`,
+      role: 'user',
+      created_at: '2026-01-01T00:00:00.000Z',
+    }));
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(users))
+      .mockResolvedValueOnce(jsonResponse(users[0]!));
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('user1@example.test');
+    expect(screen.queryByText('user11@example.test')).not.toBeInTheDocument();
+    expect(screen.getByText('Showing 1–10')).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(await screen.findByText('user11@example.test')).toBeVisible();
+    expect(screen.getByText('user12@example.test')).toBeVisible();
+    expect(screen.queryByText('user1@example.test')).not.toBeInTheDocument();
+    expect(screen.getByText('Showing 11–12')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
+  });
 });

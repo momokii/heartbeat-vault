@@ -293,7 +293,7 @@ export function AdminPage() {
             canNext={userCurrentPage + 1 < userTotalPages}
             onNext={() => setUserPage(userCurrentPage + 1)}
             shownFrom={visibleUsers.length === 0 ? 0 : userCurrentPage * userPageSize + 1}
-            shownTo={userCurrentPage * userPageSize + visibleUsers.length}
+            shownTo={userCurrentPage * userPageSize + pagedUsers.length}
           />
         </CardContent>
       </Card>
