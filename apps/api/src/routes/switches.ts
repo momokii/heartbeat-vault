@@ -18,6 +18,7 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 
 const SWITCH_KID = 'switch';
 const SWITCH_KEK_VERSION = 1;
+const SWITCH_TITLE_UNIQUE_CONSTRAINT = 'switches_owner_id_title_unique';
 
 const createSchema = z.object({
   title: z.string().min(1).max(200),
@@ -63,6 +64,9 @@ type SwitchRow = {
   release_policy: string;
   heartbeat_started_at: Date | null;
   next_deadline: Date | null;
+  created_at: Date;
+  updated_at: Date;
+  owner_email?: string | null;
 };
 
 function intervalToHours(pgInterval: string): number {
@@ -75,8 +79,8 @@ function intervalToHours(pgInterval: string): number {
   return Math.round(hours);
 }
 
-function serializeSwitch(row: SwitchRow) {
-  return {
+function serializeSwitch(row: SwitchRow, includeOwnerEmail = false) {
+  const serialized = {
     id: row.id,
     title: row.title,
     mode: row.mode,
@@ -87,14 +91,26 @@ function serializeSwitch(row: SwitchRow) {
     releasePolicy: row.release_policy,
     heartbeatStartedAt: row.heartbeat_started_at?.toISOString() ?? null,
     nextDeadline: row.next_deadline?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
   };
+  return includeOwnerEmail ? { ...serialized, ownerEmail: row.owner_email ?? null } : serialized;
 }
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-async function loadSwitch(
+function isDuplicateSwitchTitleError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    Reflect.get(error, 'code') === '23505' &&
+    Reflect.get(error, 'constraint') === SWITCH_TITLE_UNIQUE_CONSTRAINT
+  );
+}
+
+export async function loadSwitch(
   pool: Pool,
   id: string,
   userId: string,
@@ -102,7 +118,7 @@ async function loadSwitch(
 ): Promise<SwitchRow | null> {
   const res = await pool.query<SwitchRow>(
     `SELECT id, owner_id, title, mode, status, heartbeat_interval::text, grace_window::text,
-            dry_run, release_policy, heartbeat_started_at, next_deadline
+            dry_run, release_policy, heartbeat_started_at, next_deadline, created_at, updated_at
      FROM switches WHERE id=$1`,
     [id],
   );
@@ -151,6 +167,9 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
       return reply.status(201).send({ id, status: 'paused', dryRun: d.dryRun });
     } catch (err) {
       await client.query('ROLLBACK');
+      if (isDuplicateSwitchTitleError(err)) {
+        return reply.status(409).send({ error: 'duplicate_title' });
+      }
       request.log.error(err);
       return reply.status(500).send({ error: 'internal_error' });
     } finally {
@@ -164,17 +183,23 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
     const res =
       all && user.role === 'admin'
         ? await pool.query<SwitchRow>(
-            `SELECT id, owner_id, title, mode, status, heartbeat_interval::text, grace_window::text,
-                    dry_run, release_policy, heartbeat_started_at, next_deadline
-             FROM switches ORDER BY created_at`,
+            `SELECT switches.id, switches.owner_id, switches.title, switches.mode, switches.status,
+                    switches.heartbeat_interval::text, switches.grace_window::text, switches.dry_run,
+                    switches.release_policy, switches.heartbeat_started_at, switches.next_deadline,
+                    switches.created_at, switches.updated_at, users.email AS owner_email
+             FROM switches
+             LEFT JOIN users ON users.id=switches.owner_id
+             ORDER BY switches.created_at`,
           )
         : await pool.query<SwitchRow>(
             `SELECT id, owner_id, title, mode, status, heartbeat_interval::text, grace_window::text,
-                    dry_run, release_policy, heartbeat_started_at, next_deadline
+                    dry_run, release_policy, heartbeat_started_at, next_deadline, created_at, updated_at
              FROM switches WHERE owner_id=$1 ORDER BY created_at`,
             [user.id],
           );
-    return reply.status(200).send(res.rows.map(serializeSwitch));
+    return reply
+      .status(200)
+      .send(res.rows.map(row => serializeSwitch(row, all && user.role === 'admin')));
   });
 
   app.get('/api/switches/:id', { preHandler: requireAuth }, async (request, reply) => {
@@ -224,6 +249,9 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
+      if (isDuplicateSwitchTitleError(err)) {
+        return reply.status(409).send({ error: 'duplicate_title' });
+      }
       request.log.error(err);
       return reply.status(500).send({ error: 'internal_error' });
     } finally {

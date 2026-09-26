@@ -74,6 +74,23 @@ describe('SwitchSettings', () => {
     );
   });
 
+  it('explains when the saved title already exists for the owner', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'duplicate_title' }), {
+        status: 409,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    renderSettings();
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Existing plan' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'You already have a switch with this title.',
+    );
+  });
+
   it('shows an error inside the delete card when the typed title is wrong', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ ok: true }));
     renderSettings();

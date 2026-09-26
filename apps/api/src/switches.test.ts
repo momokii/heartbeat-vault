@@ -5,6 +5,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
+import { z } from 'zod';
 import { buildServer } from './server.js';
 import { resetRateLimitForTests } from './lib/rate-limit.js';
 import type { FastifyInstance } from 'fastify';
@@ -12,6 +13,13 @@ import type { FastifyInstance } from 'fastify';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const POSTGRES_IMAGE = 'postgres:17-alpine';
 const TEST_MASTER_KEY = randomBytes(32).toString('hex');
+const serializedSwitchSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .passthrough();
 
 let container: StartedPostgreSqlContainer;
 let pool: Pool;
@@ -184,6 +192,76 @@ describe('switches CRUD', () => {
     }
   });
 
+  it('returns duplicate_title without an audit row when an owner creates a duplicate title', async () => {
+    await createUser('duplicate-create@example.com', 'password-12-chars');
+    const ownerCookie = await loginAs('duplicate-create@example.com', 'password-12-chars');
+    const payload = {
+      title: 'Recovery plan',
+      mode: 'direct_delivery',
+      heartbeatIntervalHours: 24,
+      graceWindowHours: 2,
+    };
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/switches',
+          headers: authCookie(ownerCookie),
+          payload,
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: '/api/switches',
+      headers: authCookie(ownerCookie),
+      payload,
+    });
+
+    expect(duplicate.statusCode).toBe(409);
+    expect(JSON.parse(duplicate.body)).toEqual({ error: 'duplicate_title' });
+    expect(
+      await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM audit_log WHERE action='switch_created'`,
+      ),
+    ).toMatchObject({ rows: [{ count: '1' }] });
+  });
+
+  it('allows different owners to create switches with the same title', async () => {
+    await createUser('duplicate-first@example.com', 'password-12-chars');
+    await createUser('duplicate-second@example.com', 'password-12-chars');
+    const firstCookie = await loginAs('duplicate-first@example.com', 'password-12-chars');
+    const secondCookie = await loginAs('duplicate-second@example.com', 'password-12-chars');
+    const payload = {
+      title: 'Recovery plan',
+      mode: 'direct_delivery',
+      heartbeatIntervalHours: 24,
+      graceWindowHours: 2,
+    };
+
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/switches',
+          headers: authCookie(firstCookie),
+          payload,
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/api/switches',
+          headers: authCookie(secondCookie),
+          payload,
+        })
+      ).statusCode,
+    ).toBe(201);
+  });
+
   it('owner lists own switches; other user sees 404-shape; admin sees all', async () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     await createUser('mallory@example.com', 'password-12-chars');
@@ -208,6 +286,80 @@ describe('switches CRUD', () => {
     expect(detail.statusCode).toBe(200);
   });
 
+  it('serializes created and updated timestamps on list and detail reads', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    const createdAt = '2026-01-02T03:04:05.000Z';
+    const updatedAt = '2026-02-03T04:05:06.000Z';
+    await pool.query(`UPDATE switches SET created_at=$1, updated_at=$2 WHERE id=$3`, [
+      createdAt,
+      updatedAt,
+      switchId,
+    ]);
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/switches',
+      headers: authCookie(ownerCookie),
+    });
+    expect(list.statusCode).toBe(200);
+    const listItems = z.array(serializedSwitchSchema).parse(JSON.parse(list.body));
+    expect(listItems).toContainEqual(
+      expect.objectContaining({ id: switchId, createdAt, updatedAt }),
+    );
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/switches/${switchId}`,
+      headers: authCookie(ownerCookie),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(serializedSwitchSchema.parse(JSON.parse(detail.body))).toMatchObject({
+      id: switchId,
+      createdAt,
+      updatedAt,
+    });
+  });
+
+  it('includes owner email only on an administrator all-switch list', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('admin@example.com', 'password-12-chars', 'admin');
+    const adminCookie = await loginAs('admin@example.com', 'password-12-chars');
+
+    const adminList = await app.inject({
+      method: 'GET',
+      url: '/api/switches?all=1',
+      headers: authCookie(adminCookie),
+    });
+    expect(adminList.statusCode).toBe(200);
+    const adminItems = z
+      .array(serializedSwitchSchema.extend({ ownerEmail: z.string().email() }))
+      .parse(JSON.parse(adminList.body));
+    expect(adminItems).toContainEqual(
+      expect.objectContaining({ id: switchId, ownerEmail: 'owner@example.com' }),
+    );
+
+    const ownerAllList = await app.inject({
+      method: 'GET',
+      url: '/api/switches?all=1',
+      headers: authCookie(ownerCookie),
+    });
+    expect(ownerAllList.statusCode).toBe(200);
+    const ownerItems = z
+      .array(z.record(z.string(), z.unknown()))
+      .parse(JSON.parse(ownerAllList.body));
+    expect(ownerItems).toHaveLength(1);
+    expect(ownerItems[0]).not.toHaveProperty('ownerEmail');
+
+    const adminDetail = await app.inject({
+      method: 'GET',
+      url: `/api/switches/${switchId}`,
+      headers: authCookie(adminCookie),
+    });
+    expect(adminDetail.statusCode).toBe(200);
+    const detail = z.record(z.string(), z.unknown()).parse(JSON.parse(adminDetail.body));
+    expect(detail).not.toHaveProperty('ownerEmail');
+  });
+
   it('PATCH updates config only (not status/mode) with audit', async () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     const patched = await app.inject({
@@ -229,6 +381,46 @@ describe('switches CRUD', () => {
     expect(detail.title).toBe('Renamed');
     expect(detail.heartbeatIntervalHours).toBe(168);
     expect(detail.status).toBe('paused');
+  });
+
+  it('returns duplicate_title without an audit row when an owner renames to an existing title', async () => {
+    await createUser('duplicate-rename@example.com', 'password-12-chars');
+    const ownerCookie = await loginAs('duplicate-rename@example.com', 'password-12-chars');
+    const create = async (title: string): Promise<string> => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/switches',
+        headers: authCookie(ownerCookie),
+        payload: {
+          title,
+          mode: 'direct_delivery',
+          heartbeatIntervalHours: 24,
+          graceWindowHours: 2,
+        },
+      });
+      expect(response.statusCode).toBe(201);
+      return (JSON.parse(response.body) as { id: string }).id;
+    };
+    await create('Original title');
+    const switchId = await create('Other title');
+
+    const rename = await app.inject({
+      method: 'PATCH',
+      url: `/api/switches/${switchId}`,
+      headers: authCookie(ownerCookie),
+      payload: { title: 'Original title' },
+    });
+
+    expect(rename.statusCode).toBe(409);
+    expect(JSON.parse(rename.body)).toEqual({ error: 'duplicate_title' });
+    expect(
+      await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM audit_log WHERE action='switch_updated'`,
+      ),
+    ).toMatchObject({ rows: [{ count: '0' }] });
+    expect(
+      await pool.query<{ title: string }>(`SELECT title FROM switches WHERE id=$1`, [switchId]),
+    ).toMatchObject({ rows: [{ title: 'Other title' }] });
   });
 
   it('DELETE removes a non-released switch; 409 once released', async () => {

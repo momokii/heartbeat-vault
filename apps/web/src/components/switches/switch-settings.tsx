@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FieldGuidance } from '@/components/ui/field-guidance';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiClient } from '@/lib/api-client';
+import { ApiError, apiClient } from '@/lib/api-client';
 
 const updateSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -66,8 +66,12 @@ export function SwitchSettings({
       });
       onUpdated(result);
       setMessage('Settings saved.');
-    } catch {
-      setMessage('Settings could not be saved. Try again.');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setMessage('You already have a switch with this title.');
+      } else {
+        setMessage('Settings could not be saved. Try again.');
+      }
     } finally {
       setBusy(false);
     }

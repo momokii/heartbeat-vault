@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
-import { apiClient } from '@/lib/api-client';
+import { ApiError, apiClient } from '@/lib/api-client';
 import { releaseModes, releasePolicies } from './switch-new-guidance';
 import {
   defaultSwitchFormValues,
@@ -51,6 +51,10 @@ export function NewSwitchPage() {
       });
       navigate('/');
     } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        setState({ kind: 'error', message: 'You already have a switch with this title.' });
+        return;
+      }
       if (error instanceof Error) {
         setState({
           kind: 'error',

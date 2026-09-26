@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { NewSwitchPage } from './switch-new';
 import { calculatePreviewSchedule } from './switch-new-guidance';
@@ -16,6 +16,7 @@ function renderPage(): void {
 }
 
 describe('NewSwitchPage', () => {
+  afterEach(() => vi.restoreAllMocks());
   it('computes the missed deadline and release time from the interval and grace window', () => {
     const schedule = calculatePreviewSchedule({
       now: new Date('2026-01-02T03:04:05.000Z'),
@@ -106,5 +107,21 @@ describe('NewSwitchPage', () => {
     });
     fireEvent.submit(form);
     expect(screen.getByRole('alert')).toHaveTextContent('Use at least a 24-hour interval.');
+  });
+
+  it('explains when the submitted title already exists for the owner', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'duplicate_title' }), {
+        status: 409,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Fill with example values' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create paused switch' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'You already have a switch with this title.',
+    );
   });
 });
