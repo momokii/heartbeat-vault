@@ -13,6 +13,7 @@ import {
   customType,
   check,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 // bytea via customType — stored as Buffer, exposed as Buffer/Uint8Array
@@ -75,6 +76,7 @@ export const switches = pgTable(
       .default(sql`clock_timestamp()`),
   },
   t => [
+    uniqueIndex('switches_owner_id_title_unique').on(t.ownerId, t.title),
     check('switches_mode_check', sql`${t.mode} IN ('asymmetric_key','direct_delivery')`),
     check('switches_status_check', sql`${t.status} IN ('active','paused','released')`),
     check('switches_release_policy_check', sql`${t.releasePolicy} IN ('fail_safe','fail_deadly')`),

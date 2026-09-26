@@ -4,6 +4,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const POSTGRES_IMAGE = 'postgres:17-alpine';
@@ -249,5 +250,81 @@ describe('db schema migrations', () => {
         [switchId],
       ),
     ).rejects.toThrow(/duplicate|unique/i);
+  });
+
+  it('enforces switch titles as unique for each owner while allowing another owner to reuse them', async () => {
+    const firstOwner = await pool
+      .query<{ id: string }>(
+        `INSERT INTO users (email, password_hash) VALUES ('title-one@example.com','phc') RETURNING id`,
+      )
+      .then(result => result.rows[0]!.id);
+    const secondOwner = await pool
+      .query<{ id: string }>(
+        `INSERT INTO users (email, password_hash) VALUES ('title-two@example.com','phc') RETURNING id`,
+      )
+      .then(result => result.rows[0]!.id);
+
+    await pool.query(
+      `INSERT INTO switches (owner_id, title, mode, heartbeat_interval, grace_window)
+       VALUES ($1, 'Recovery plan', 'direct_delivery', '24 hours', '2 hours')`,
+      [firstOwner],
+    );
+    await expect(
+      pool.query(
+        `INSERT INTO switches (owner_id, title, mode, heartbeat_interval, grace_window)
+         VALUES ($1, 'Recovery plan', 'direct_delivery', '24 hours', '2 hours')`,
+        [firstOwner],
+      ),
+    ).rejects.toThrow(/duplicate|unique/i);
+    await expect(
+      pool.query(
+        `INSERT INTO switches (owner_id, title, mode, heartbeat_interval, grace_window)
+         VALUES ($1, 'Recovery plan', 'direct_delivery', '24 hours', '2 hours')`,
+        [secondOwner],
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('backfills duplicate switch titles deterministically without losing rows', async () => {
+    const migrationSql = await readFile(
+      join(__dirname, '..', 'drizzle', '0007_switch_title_uniqueness.sql'),
+      'utf8',
+    );
+    await pool.query(`CREATE SCHEMA switch_title_backfill_test`);
+    await pool.query(`SET search_path TO switch_title_backfill_test, public`);
+    try {
+      await pool.query(`
+        CREATE TABLE switches (
+          id uuid PRIMARY KEY,
+          owner_id uuid NOT NULL,
+          title text NOT NULL,
+          created_at timestamp with time zone NOT NULL
+        )
+      `);
+      const ownerId = '00000000-0000-0000-0000-000000000001';
+      await pool.query(
+        `INSERT INTO switches (id, owner_id, title, created_at) VALUES
+          ('00000000-0000-0000-0000-000000000011', $1, 'Legacy plan', '2026-01-01T00:00:00Z'),
+          ('00000000-0000-0000-0000-000000000012', $1, 'Legacy plan', '2026-01-02T00:00:00Z'),
+          ('00000000-0000-0000-0000-000000000013', $1, 'Legacy plan', '2026-01-03T00:00:00Z')`,
+        [ownerId],
+      );
+
+      await pool.query(migrationSql);
+
+      const rows = await pool.query<{ title: string }>(
+        `SELECT title FROM switches WHERE owner_id=$1 ORDER BY created_at`,
+        [ownerId],
+      );
+      expect(rows.rows.map(row => row.title)).toEqual([
+        'Legacy plan (duplicate 1)',
+        'Legacy plan (duplicate 2)',
+        'Legacy plan',
+      ]);
+      expect(rows.rows).toHaveLength(3);
+    } finally {
+      await pool.query(`RESET search_path`);
+      await pool.query(`DROP SCHEMA switch_title_backfill_test CASCADE`);
+    }
   });
 });
