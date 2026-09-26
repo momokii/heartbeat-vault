@@ -139,6 +139,12 @@
 - [x] Docs trace to implementation: `README.md` (default+Tailnet paragraph, `CADDY_BIND_IP` table row, FAQ wildcard note), `docs/ARCHITECTURE.md` (loopback default + single-IP rebind), `docs/OPERATIONS.md` (Tailnet operation section incl. `__Host-`/HTTPS caveat, `ss`/`curl`/smoke checks, peer manual step), `docs/SECURITY.md` (exact-IP verifier guarantee).
 - [!] Verification limit: `tailscale` CLI unavailable on this host — binding proven host-locally (`ss`/`docker compose port`/`curl` to `100.124.184.116`); reachability from another Tailnet device is a documented manual check.
 
+## Wave 2a: Switch read metadata and dashboard filters — DONE (2026-09-26)
+
+- [x] Switch list and detail reads serialize ISO 8601 `createdAt` and `updatedAt`; `ownerEmail` is present only for an administrator's `GET /api/switches?all=1` items and omitted for all detail and non-administrator reads.
+- [x] The dashboard loads the all-switch list once, derives case-insensitive title and status filters locally, presents a neutral zero-match state, formats timestamps, and renders owner metadata only for administrators. Detail settings updates retain read metadata.
+- [x] `docs/API.md` records the response fields and owner-email authorization boundary. Gate evidence: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `pnpm test` passed (API 144, web 59, crypto 64, DB 13, E2E 1); production-preview Playwright checks passed at 1280px, 768px, and 375px with no filter-triggered requests or console errors; visual review PASS.
+
 ## Key decisions
 
 - 2026-09-20 (user answers): deployment = single-household, one host, documented HA path; channels v1 = Email + Webhook + Telegram (Matrix/SFTP deferred); CI = GitHub Actions + GHCR; UI/docs = English only; license = permissive MIT/Apache-2.0 family (exact pick pending); threat priority = stolen-data-at-rest first (full STRIDE + ASVS map still required); release model = server-side automatic release for v1; hardened profile = NOT in v1 — standard-only v1, hardened (Vault vs OpenBao) deferred to next-development todo with ADRs.

@@ -6,6 +6,7 @@ import { SetupPage } from '@/routes/setup';
 import { NewSwitchPage } from '@/routes/switch-new';
 import { SwitchDetailPage } from '@/routes/switch-detail';
 import { AdminPage } from '@/routes/admin';
+import { AdminActivityPage } from '@/routes/admin-activity';
 import { TotpChallengePage } from '@/routes/totp-challenge';
 import { AccountPage } from '@/routes/account';
 import { AccountResetPage } from '@/routes/account-reset';
@@ -22,6 +23,7 @@ const router = createBrowserRouter([
       { path: '/switches/new', element: <NewSwitchPage /> },
       { path: '/switches/:id', element: <SwitchDetailPage /> },
       { path: '/admin', element: <AdminPage /> },
+      { path: '/admin/activity', element: <AdminActivityPage /> },
       { path: '/account', element: <AccountPage /> },
       { path: '/account/reset', element: <AccountResetPage /> },
       { path: '/invite/accept', element: <InviteAcceptPage /> },

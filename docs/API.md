@@ -38,6 +38,7 @@ The setup route returns `410 Gone` once bootstrap is complete. Empty-body probes
 | `POST` | `/api/users/:id/password-reset`  | Issue a password-reset token; administrative access required.                                                           |
 | `POST` | `/api/invites`                   | Create a user invitation; administrative access required.                                                               |
 | `PUT`  | `/api/admin/settings`            | Set instance settings; administrative access required.                                                                  |
+| `GET`  | `/api/audit-log`                 | Read the redacted, cursor-paginated audit log; administrative access required.                                          |
 
 ### Password resets
 
@@ -63,26 +64,35 @@ The setup route returns `410 Gone` once bootstrap is complete. Empty-body probes
 
 All switch routes require an authenticated owner or administrator. UUID paths that do not resolve to an accessible switch intentionally produce `404` rather than disclosing ownership.
 
-| Method   | Path                                | Purpose                                                                                               |
-| -------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `POST`   | `/api/switches`                     | Create a paused switch.                                                                               |
-| `GET`    | `/api/switches`                     | List the caller's switches; an administrator may request all switches with `?all=1`.                  |
-| `GET`    | `/api/switches/:id`                 | Read one accessible switch.                                                                           |
-| `PATCH`  | `/api/switches/:id`                 | Change editable switch metadata, interval, grace window, or dry-run setting.                          |
-| `DELETE` | `/api/switches/:id`                 | Delete a non-released switch.                                                                         |
-| `POST`   | `/api/switches/:id/payload`         | Encrypt and store the payload before database persistence.                                            |
-| `POST`   | `/api/switches/:id/recipients`      | Add a recipient and issue its invitation flow.                                                        |
-| `GET`    | `/api/switches/:id/recipients`      | List recipients.                                                                                      |
-| `DELETE` | `/api/switches/:id/recipients/:rid` | Remove a recipient where the lifecycle permits it.                                                    |
-| `POST`   | `/api/switches/:id/arm`             | Arm a switch; body requires `confirm: true`, and `fail_deadly` requires typed switch-ID confirmation. |
-| `POST`   | `/api/switches/:id/disarm`          | Return an active switch to paused state.                                                              |
-| `POST`   | `/api/switches/:id/check-in`        | Record a heartbeat before the deadline.                                                               |
-| `POST`   | `/api/switches/:id/trigger`         | Start the trigger path according to the authorized flow.                                              |
-| `POST`   | `/api/switches/:id/cancel`          | Cancel a pending trigger according to the authorized flow.                                            |
-| `POST`   | `/api/switches/:id/heartbeat-link`  | Create a heartbeat-link flow.                                                                         |
-| `POST`   | `/api/switches/:id/heartbeat-token` | Create a token-based heartbeat flow.                                                                  |
+| Method   | Path                                | Purpose                                                                                                                      |
+| -------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `POST`   | `/api/switches`                     | Create a paused switch.                                                                                                      |
+| `GET`    | `/api/switches`                     | List the caller's switches; an administrator may request all switches with `?all=1`, which includes each switch owner email. |
+| `GET`    | `/api/switches/:id`                 | Read one accessible switch.                                                                                                  |
+| `GET`    | `/api/switches/:id/audit`           | Read the redacted, cursor-paginated audit history for one accessible switch.                                                 |
+| `PATCH`  | `/api/switches/:id`                 | Change editable switch metadata, interval, grace window, or dry-run setting.                                                 |
+| `DELETE` | `/api/switches/:id`                 | Delete a non-released switch.                                                                                                |
+| `POST`   | `/api/switches/:id/payload`         | Encrypt and store the payload before database persistence.                                                                   |
+| `POST`   | `/api/switches/:id/recipients`      | Add a recipient and issue its invitation flow.                                                                               |
+| `GET`    | `/api/switches/:id/recipients`      | List recipients.                                                                                                             |
+| `DELETE` | `/api/switches/:id/recipients/:rid` | Remove a recipient where the lifecycle permits it.                                                                           |
+| `POST`   | `/api/switches/:id/arm`             | Arm a switch; body requires `confirm: true`, and `fail_deadly` requires typed switch-ID confirmation.                        |
+| `POST`   | `/api/switches/:id/disarm`          | Return an active switch to paused state.                                                                                     |
+| `POST`   | `/api/switches/:id/check-in`        | Record a heartbeat before the deadline.                                                                                      |
+| `POST`   | `/api/switches/:id/trigger`         | Start the trigger path according to the authorized flow.                                                                     |
+| `POST`   | `/api/switches/:id/cancel`          | Cancel a pending trigger according to the authorized flow.                                                                   |
+| `POST`   | `/api/switches/:id/heartbeat-link`  | Create a heartbeat-link flow.                                                                                                |
+| `POST`   | `/api/switches/:id/heartbeat-token` | Create a token-based heartbeat flow.                                                                                         |
 
 The create payload accepts the switch title, mode, heartbeat interval (hours), grace window (hours), dry-run flag, and release policy. Payload storage accepts plaintext only over the authenticated request; the API immediately envelopes it and persists ciphertext fields. Recipient creation accepts a channel (`email`, `webhook`, or `telegram`) and an address. The exact validation constraints and JSON response shapes are enforced by the route schemas.
+
+### Switch read responses
+
+Every item returned by `GET /api/switches` and every `GET /api/switches/:id` response includes
+`createdAt` and `updatedAt` as ISO 8601 timestamps, alongside the existing switch metadata and
+heartbeat timestamps. `ownerEmail` is included only in items from `GET /api/switches?all=1` when
+the requester is an administrator. Non-administrator list responses (including `?all=1`) and all
+single-switch responses omit `ownerEmail`.
 
 ### Lifecycle constraints
 
