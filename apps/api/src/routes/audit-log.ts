@@ -111,12 +111,12 @@ export async function registerAuditLogRoutes(app: FastifyInstance, pool: Pool): 
         ${predicate.where}
        ORDER BY a.id DESC
        LIMIT $${predicate.parameters.length + 1}`,
-        [...predicate.parameters, limit],
+        [...predicate.parameters, limit + 1],
       );
-      const items = result.rows.map(serializeAuditRow);
+      const items = result.rows.slice(0, limit).map(serializeAuditRow);
       return reply.status(200).send({
         items,
-        nextBeforeId: items.length === limit ? (items.at(-1)?.id ?? null) : null,
+        nextBeforeId: result.rows.length > limit ? (items.at(-1)?.id ?? null) : null,
       });
     },
   );
@@ -145,12 +145,12 @@ export async function registerSwitchAuditRoutes(app: FastifyInstance, pool: Pool
        ${predicate.where}
        ORDER BY a.id DESC
        LIMIT $${predicate.parameters.length + 1}`,
-      [...predicate.parameters, limit],
+      [...predicate.parameters, limit + 1],
     );
-    const items = result.rows.map(serializeAuditRow);
+    const items = result.rows.slice(0, limit).map(serializeAuditRow);
     return reply.status(200).send({
       items,
-      nextBeforeId: items.length === limit ? (items.at(-1)?.id ?? null) : null,
+      nextBeforeId: result.rows.length > limit ? (items.at(-1)?.id ?? null) : null,
     });
   });
 }

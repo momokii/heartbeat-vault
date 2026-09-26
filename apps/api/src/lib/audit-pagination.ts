@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+/** Escapes LIKE/ILIKE wildcards so user input matches literally. */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, char => `\\${char}`);
+}
+
 export const auditCategories = [
   'auth',
   'switch',
@@ -91,8 +96,12 @@ export function buildAuditPredicate(filters: AuditReadFilters, target?: string):
   if (target !== undefined) clauses.push(`a.target = ${add(target)}`);
   if (filters.beforeId !== undefined) clauses.push(`a.id < ${add(filters.beforeId)}`);
   if (filters.q !== undefined) {
-    const query = add(`%${filters.q}%`);
-    clauses.push(`(a.target ILIKE ${query} OR u.email ILIKE ${query})`);
+    const pattern = `%${escapeLikePattern(filters.q)}%`;
+    const targetPlaceholder = add(pattern);
+    const emailPlaceholder = add(pattern);
+    clauses.push(
+      `(a.target ILIKE ${targetPlaceholder} ESCAPE '\\' OR u.email ILIKE ${emailPlaceholder} ESCAPE '\\')`,
+    );
   }
   if (filters.category !== undefined) {
     clauses.push(`${auditCategoryExpression} = ${add(filters.category)}`);

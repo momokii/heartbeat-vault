@@ -324,6 +324,68 @@ describe('report exports', () => {
     expect(await ledgerRows()).toHaveLength(0);
   });
 
+  it('returns no cursor on an exact page boundary and treats LIKE wildcards literally', async () => {
+    // Given
+    const admin = await createUser('admin@example.com', 'admin');
+    const owner = await createUser('owner@example.com');
+    const literalSwitchId = await createSwitch(owner.id, '100%_plan');
+    const plainSwitchId = await createSwitch(owner.id, 'history-plan');
+    await app.inject({
+      method: 'POST',
+      url: '/api/reports/exports',
+      payload: { format: 'json', scope: 'switch', switchId: literalSwitchId },
+      headers: { cookie: admin.cookie },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/reports/exports',
+      payload: { format: 'json', scope: 'switch', switchId: plainSwitchId },
+      headers: { cookie: admin.cookie },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/reports/exports',
+      payload: { format: 'csv', scope: 'global' },
+      headers: { cookie: admin.cookie },
+    });
+
+    // When — exact page boundary: 2 rows with page size 2 must end pagination
+    const exactBoundary = await app.inject({
+      method: 'GET',
+      url: '/api/reports/exports?limit=2',
+      headers: { cookie: admin.cookie },
+    });
+    const boundaryBody = exactBoundary.json() as { items: unknown[]; nextBeforeId: number };
+    const secondBoundary = await app.inject({
+      method: 'GET',
+      url: `/api/reports/exports?limit=2&beforeId=${boundaryBody.nextBeforeId}`,
+      headers: { cookie: admin.cookie },
+    });
+    const literalMatch = await app.inject({
+      method: 'GET',
+      url: '/api/reports/exports?q=100%25_plan',
+      headers: { cookie: admin.cookie },
+    });
+    const wildcardQuery = await app.inject({
+      method: 'GET',
+      url: '/api/reports/exports?q=%25_',
+      headers: { cookie: admin.cookie },
+    });
+
+    // Then
+    expect(boundaryBody.items).toHaveLength(2);
+    expect(boundaryBody.nextBeforeId).toBeTypeOf('number');
+    expect(secondBoundary.statusCode).toBe(200);
+    expect((secondBoundary.json() as { items: unknown[] }).items).toHaveLength(1);
+    expect((secondBoundary.json() as { nextBeforeId: number | null }).nextBeforeId).toBeNull();
+    expect((literalMatch.json() as { items: unknown[] }).items).toHaveLength(1);
+    const wildcardBody = wildcardQuery.json() as {
+      items: { switchTitle: string | null }[];
+    };
+    expect(wildcardBody.items).toHaveLength(1);
+    expect(wildcardBody.items[0]!.switchTitle).toBe('100%_plan');
+  });
+
   it('records a failed ledger entry when the export exceeds the row cap', async () => {
     // Given
     const admin = await createUser('admin@example.com', 'admin');
@@ -471,7 +533,7 @@ describe('report exports', () => {
     });
     expect(afterCursor.json()).toMatchObject({
       items: [expect.objectContaining({ id: allBody.items[1]!.id })],
-      nextBeforeId: expect.any(Number),
+      nextBeforeId: null,
     });
   });
 

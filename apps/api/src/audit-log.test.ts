@@ -225,6 +225,12 @@ describe('audit read APIs', () => {
     expect(firstPage.items.map(item => item.id)).toEqual([thirdId, secondId]);
     expect(firstPage.nextBeforeId).toBe(secondId);
     expect(parseAuditPage(secondPageResponse).items.map(item => item.id)).toEqual([firstId]);
+    const exactPageResponse = await app.inject({
+      method: 'GET',
+      url: `/api/switches/${switchId}/audit?limit=3`,
+      headers: { cookie: owner.cookie },
+    });
+    expect(parseAuditPage(exactPageResponse).nextBeforeId).toBeNull();
     const countAfter = await pool.query<{ count: string }>(
       'SELECT COUNT(*)::text AS count FROM audit_log',
     );

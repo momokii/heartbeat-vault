@@ -3,7 +3,12 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import { createAuthPreHandler } from '../lib/auth-middleware.js';
 import { requireRole } from '../lib/roles.js';
-import { auditCategories, auditDateSchema, buildAuditPredicate } from '../lib/audit-pagination.js';
+import {
+  auditCategories,
+  auditDateSchema,
+  buildAuditPredicate,
+  escapeLikePattern,
+} from '../lib/audit-pagination.js';
 import { auditSelect, buildAuditCsv, serializeAuditRow, type AuditRow } from './audit-log.js';
 
 const EXPORT_ROW_LIMIT = 10_000;
@@ -176,8 +181,12 @@ export async function registerReportsRoutes(app: FastifyInstance, pool: Pool): P
       if (parsed.data.switchId !== undefined)
         clauses.push(`j.switch_id = ${add(parsed.data.switchId)}`);
       if (parsed.data.q !== undefined) {
-        const pattern = `%${parsed.data.q}%`;
-        clauses.push(`(u.email ILIKE ${add(pattern)} OR s.title ILIKE ${add(pattern)})`);
+        const pattern = `%${escapeLikePattern(parsed.data.q)}%`;
+        const emailPlaceholder = add(pattern);
+        const titlePlaceholder = add(pattern);
+        clauses.push(
+          `(u.email ILIKE ${emailPlaceholder} ESCAPE '\\' OR s.title ILIKE ${titlePlaceholder} ESCAPE '\\')`,
+        );
       }
       const where = clauses.length === 0 ? '' : `WHERE ${clauses.join(' AND ')}`;
 
@@ -191,9 +200,10 @@ export async function registerReportsRoutes(app: FastifyInstance, pool: Pool): P
          ${where}
          ORDER BY j.seq DESC
          LIMIT $${parameters.length + 1}`,
-        [...parameters, limit],
+        [...parameters, limit + 1],
       );
-      const items = result.rows.map(row => ({
+      const rows = result.rows.slice(0, limit);
+      const items = rows.map(row => ({
         id: row.id,
         createdAt: row.createdAt.toISOString(),
         requestedByEmail: row.requestedByEmail,
@@ -211,7 +221,7 @@ export async function registerReportsRoutes(app: FastifyInstance, pool: Pool): P
       }));
       return reply.status(200).send({
         items,
-        nextBeforeId: items.length === limit ? Number(result.rows.at(-1)?.seq ?? 0) || null : null,
+        nextBeforeId: result.rows.length > limit ? Number(rows.at(-1)?.seq ?? 0) || null : null,
       });
     },
   );
