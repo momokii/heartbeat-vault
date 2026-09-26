@@ -149,6 +149,12 @@ export function AdminPage() {
           Administration
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">Users and invitations</h1>
+        <p className="text-sm text-[var(--color-muted-foreground)]">
+          <Link to="/admin/activity" className="font-medium underline underline-offset-4">
+            View the activity log
+          </Link>{' '}
+          — every sign-in, switch change, and account action across this vault.
+        </p>
       </div>
       <Card>
         <CardHeader>

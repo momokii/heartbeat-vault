@@ -305,4 +305,24 @@ describe('AdminPage', () => {
       within(invitedUserRow).getByRole('button', { name: 'Reset password' }),
     ).toBeInTheDocument();
   });
+
+  it('links to the whole-app activity log from the admin page', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse([existingUser, invitedUser]))
+      .mockResolvedValueOnce(jsonResponse(existingUser));
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <AdminPage />
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText(existingUser.email);
+    expect(screen.getByRole('link', { name: 'View the activity log' })).toHaveAttribute(
+      'href',
+      '/admin/activity',
+    );
+  });
 });
