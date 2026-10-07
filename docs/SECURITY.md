@@ -53,3 +53,13 @@ scripts/verify-security.sh --json
 Exit code `0` means no FAIL result; WARN results need operator review. The script never prints secret values and does not restart or change the stack. A fresh install is expected to warn that bootstrap is still open and that no ciphertext payload row exists yet. Complete setup, store a test payload, and run it again for stronger runtime evidence.
 
 For a suspected key or host compromise: pause/disarm affected switches if safe, preserve logs and database evidence, rotate credentials and `MASTER_KEY` through the supported rewrap process before retiring old key material, and assume any payload decryptable on the compromised host may have been exposed. Restore only from a known-good, protected backup.
+
+## Dependency audit posture
+
+`pnpm audit` is configured with a historical ignore list (`package.json` → `pnpm.auditConfig.ignoreGhsas`, 18 entries). A full unfiltered audit during the maintenance sweep returned 20 advisories; every finding resolves exclusively through development-only chains (testcontainers/undici subtrees, Vite/eslint/jsdom/prettier/turbo/tsx tooling, drizzle-kit loaders). Zero findings reach production runtime paths — verified per finding, not assumed. Notable cases:
+
+- `esbuild` development-server request forgery (moderate): present only as `drizzle-kit > @esbuild-kit/* > esbuild@0.18.20`; the vulnerable component is the esbuild dev server, which this repository never starts (drizzle-kit is used for `check`/migration inspection only). Not remediable by version bump — upstream still resolves to 0.18.20.
+- `@fastify/busboy` DoS + CRLF injection (high/moderate) and all `undici` findings: reachable only via testcontainers' vendored undici in test scope, never via the API's request path.
+- `source-map-js` event-loop DoS (high, 81 paths): build/test tooling chains only.
+
+Major upgrades remain deferred with reasons recorded in the decisions log (vite 8, eslint 10 stack, TypeScript 7, vitest pending the Node ≥20/22 baseline decision, `@noble/hashes` 2, `@simplewebauthn/server` 14, testcontainers 12, `@types/node` 26). Re-run the unfiltered audit whenever dependencies move; any future finding with a production path must be remediated, not ignored.
