@@ -356,7 +356,7 @@ cmd_restore() {
 
 cmd_uninstall() {
   if [ "$YES" != 1 ]; then
-    err "This stops and removes the containers. Keep data with: ./install.sh uninstall --volumes --yes (omit --volumes to KEEP the database volume)."
+    err "This stops and removes the containers. Keep data with: ./install.sh uninstall --volumes --yes (without --volumes the database volume is deleted)."
     exit 2
   fi
   if [ "$KEEP_VOLUMES" = 1 ]; then

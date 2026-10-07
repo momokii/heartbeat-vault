@@ -74,7 +74,7 @@ Copying `.env.example` manually is supported, but `./install.sh install` is safe
 | Setting                   | Purpose                                                                                                                                                          |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MASTER_KEY`              | Server-side key-encryption key for stored payload envelopes. Keep it secret and backed up separately.                                                            |
-| `SESSION_SECRET`          | Session security material.                                                                                                                                       |
+| `SESSION_SECRET`          | Reserved credential slot (generated at install, placeholder-checked). Sessions use opaque random tokens, not this value.                                         |
 | `POSTGRES_PASSWORD`       | PostgreSQL application password.                                                                                                                                 |
 | `BACKUP_ENCRYPTION_KEY`   | Enables encrypted installer backups; without it backups are explicitly warned as unencrypted.                                                                    |
 | `HTTP_PORT`, `HTTPS_PORT` | Loopback Caddy ports in the base Compose profile.                                                                                                                |
