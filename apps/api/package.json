@@ -25,7 +25,7 @@
     "testcontainers": "10.14.0",
     "tsx": "4.23.15",
     "typescript": "5.7.3",
-    "typescript-eslint": "8.70.0",
+    "typescript-eslint": "8.71.1",
     "vitest": "5.0.1"
   },
   "dependencies": {
