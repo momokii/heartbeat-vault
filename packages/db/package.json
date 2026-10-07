@@ -20,14 +20,14 @@
     "db:seed": "tsx src/seed.ts"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2",
+    "drizzle-orm": "0.45.3",
     "pg": "8.23.1"
   },
   "devDependencies": {
     "@testcontainers/postgresql": "10.14.0",
     "@types/node": "22.13.10",
     "@types/pg": "8.23.1",
-    "drizzle-kit": "0.31.4",
+    "drizzle-kit": "0.31.11",
     "testcontainers": "10.14.0",
     "tsx": "4.19.1",
     "typescript": "5.7.3",
