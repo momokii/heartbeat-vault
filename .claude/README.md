@@ -1,14 +1,16 @@
 # Heartbeat Vault — Agent Orientation
 
-> **Status:** Blank repository. Stack, purpose, and architecture are not yet determined.
-> All `.claude/` files start intentionally general and **must evolve** into
-> project-specific guidance as real knowledge is discovered.
+> **Status:** Shipped standard-profile v1 (self-hosted dead man's switch: Fastify API +
+> React web + Postgres + Caddy, TypeScript monorepo). See `docs/PROGRESS.md` for the
+> completed phases and `.claude/state/CURRENT_STATUS.md` for live state.
+> `.claude/` files must keep evolving as real knowledge is discovered.
 
 ## What This Repository Is
 
-Heartbeat Vault is a new project under active definition. Until the first real
-working session establishes a PRD / tech stack / architecture, treat every
-project-level statement here as a placeholder to be replaced — not as fact.
+Heartbeat Vault is a shipped self-hosted dead man's switch (Fastify API + React web +
+Postgres + Caddy, TypeScript monorepo, standard-profile v1). Treat `docs/PROGRESS.md`
+and `.claude/state/CURRENT_STATUS.md` as the source of truth for what is done; treat
+any remaining general/placeholder statement in `.claude/` files as suspect until verified.
 
 ## Orientation Sequence (read in this order, every session)
 

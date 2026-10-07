@@ -1,42 +1,41 @@
 ## Project Phase
 
-Phase 0 — Discovery and Design Gate (IN PROGRESS). Brief received 2026-09-20; no implementation permitted before design approval.
+Standard-profile v1 implementation complete and deployed. Active work: maintenance sweep
+(dependency updates, docs/state refresh, GHSA review).
 
 ## Completed
 
-- [x] `.claude/` agent infrastructure initialized (14 files)
-- [x] Conventional Commits enforced (CODING_STANDARDS + AGENT_RULES + templates)
-- [x] Git repo initialized on `main`
-- [x] `.gitignore` created — `.env`, secrets, OS/IDE artifacts covered
-- [x] `.env.example` created with documented placeholders
-- [x] Root `README.md` created
-- [x] Brief saved verbatim to `docs/BRIEF.md` (Phase 0 step 1)
-- [x] `docs/PROGRESS.md`, `docs/ASSUMPTIONS.md`, `CLAUDE.md` created
+- [x] Full product: TypeScript monorepo (Fastify API + React web + Postgres + Caddy), auth with TOTP/WebAuthn/recovery, switches, heartbeat + trigger engine, delivery channels (email/webhook/Telegram), audit trail with details/filters/export, reports ledger + export dialog, admin navigation, consistent list pagination/search
+- [x] Gates green at HEAD: format, lint, typecheck, full test suites, build, security verifier, live smoke
+- [x] Deployed stack healthy (api/caddy/db) at http://100.124.184.116; repo pushed to origin/main (momokii/heartbeat-vault)
+- [x] ADR 009 (auth libraries) accepted as shipped
+- [x] Dependency sweep: pg 8.23.1, drizzle-orm 0.45.3, nodemailer 10.0.16, fastify/cookie, argon2, jsdom, tsx, typescript-eslint, root dev tooling — each gated and committed
+- [x] E2E bootstrap journey repaired (selector disambiguation) and passing
 
 ## In Progress
 
-- [ ] Phase 0 gate: `docs/DESIGN.md` proposed 2026-09-20 — awaiting user approval (no implementation before approval)
+- [ ] Maintenance sweep: docs/state refresh, GHSA ignore-list review, deferred-upgrade records (vite 8, eslint 10, TS 7, vitest engine, nobles/webauthn/testcontainers majors)
 
 ## Blocked
 
 None.
 
-## Open Questions
+## Open Questions (require user decisions)
 
-- Tech stack: proposed default TypeScript monorepo (Brief §7) — pending Phase 0 approval
-- All Phase 0 clarifying questions (deployment size, channels, CI/registry, languages, license, threat priorities, release model, hardened profile) — asked 2026-09-20, answers pending
-- Product purpose now defined by `docs/BRIEF.md` (self-hosted dead man's switch)
+- Phase 0 design approval was never formally recorded (historical; not fabricated)
+- Hardened Vault/OpenBao profile: deferred by decision (ADR-007)
+- License: MIT vs Apache never finally picked
+- BACKUP_ENCRYPTION_KEY unset → installer backups unencrypted
+- Node baseline: repo allows Node 20 (.nvmrc), CI/local run 22 — vitest 5.0.3 needs ≥22.12, so its bump is deferred until the baseline is decided
+- Backup + restore never exercised against real production data
 
 ## Security Notes
 
-- No implementation exists yet — security standards will be applied from first commit.
+- Security standards apply from first commit; no suppressions in app code (`as any`/`ts-ignore` absent)
+- All current `pnpm audit` findings are dev-only paths (testcontainers/vite/eslint chains); zero production reachability — verified per-finding
+- 18 historical GHSA ignores under review in this sweep
 
 ## Last Updated
 
-- 2026-09-18 — Infrastructure scaffolded (session 0). No product code yet.
-- 2026-09-18 — Repo bootstrap complete: git init (main), .gitignore, .env.example,
-  root README, Conventional Commits wired in. `.env` verified gitignored.
-- 2026-09-18 — Initial commit `651fcae` created
-  (`chore(repo): bootstrap agent infrastructure and repo scaffolding`).
-  Working tree clean. Ready for first development task.
+- Maintenance sweep session: baseline green, pg/drizzle/nodemailer/cookie/argon2/jsdom/tsx/dev-tooling bumped with gates, e2e repaired, docs corrections committed (uninstall message, SESSION_SECRET wording, ADR 009).
   [Agent must update this timestamp and append a session summary after every session.]

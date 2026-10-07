@@ -3,7 +3,7 @@
 > Memory across long sessions. Read `CLAUDE.md`, `docs/BRIEF.md`, then this file first on resume.
 > Updated at each phase gate per Brief Section 14.
 
-## Phase 0: Discovery and Design Gate — IN PROGRESS (started 2026-09-20)
+## Phase 0: Discovery and Design Gate — WORK COMPLETE, approval never recorded (see Open issues)
 
 - [x] Save brief verbatim to `docs/BRIEF.md`
 - [x] Init git repo (pre-existing bootstrap commits `651fcae`, `693d6e5` on `main`)
@@ -14,7 +14,7 @@
 - [ ] Assumptions recorded in `docs/ASSUMPTIONS.md` (defaults only where user cannot answer)
 - [ ] Commit Phase 0 gate (Conventional Commits)
 
-## Phase 1: Repo and tooling foundation — IN PROGRESS (started 2026-09-20, T1.1 monorepo skeleton)
+## Phase 1: Repo and tooling foundation — DONE (all T1.x tasks checked)
 
 - Gate: monorepo layout, lint/typecheck/test tooling, Docker base, `docs/PROGRESS.md` updated, committed.
 - [x] T1.1 monorepo skeleton — pnpm workspaces + Turborepo + tsconfig.base.json strict + 6 package skeletons (no app code)
@@ -22,7 +22,7 @@
 - [x] T1.3 Docker base (standard profile) — `docker-compose.yml` (api + postgres:17-alpine@sha256:18cfe... + caddy:2-alpine@sha256:de23de... all pinned, no `latest`), `docker-compose.override.yml` (dev: 127.0.0.1-bound DB/API/admin ports, LOG_LEVEL debug), `docker-compose.prod.yml` (restart unless-stopped, resource limits, no dev mounts/ports, json-file rotation), `apps/api/Dockerfile` multi-stage node@sha256:b6f26b... non-root `USER node` + `tini` + placeholder `server.mjs` (`/health` 200, TODO Phase 3+), `Caddyfile` (`tls internal` LAN default, HSTS/CSP/headers, `reverse_proxy api:3000`), `.env.example` extended (all ports, DB/app/auth/MASTER_KEY, TLS options, channel placeholders); healthchecks `pg_isready` + caddy admin ping + api Node http; `docker compose config` (both base and prod) valid; `docker compose up -d --build` healthy (all 3); DB internal-only (no ports in base/prod, 127.0.0.1-only in override); containers least-privilege; staged only, no commit (2026-09-20)
 - [x] T1.4 ADRs 001-002 plus docs scaffold — `docs/adr/001-monorepo-pnpm-turborepo.md`, `docs/adr/002-postgres-as-queue.md`, `docs/adr/README.md`, stub `docs/ARCHITECTURE.md` + `docs/SECURITY.md` (each one paragraph scope plus pointer to `docs/DESIGN.md`, no invented details); grounded in `docs/DESIGN.md` §§1-2 and `docs/BRIEF.md` §§7/7.1; prose only, no code or Docker or ADRs 003-010
 
-## Phase 2: Data model and crypto core — IN PROGRESS (T2.1 DB done, T2.2-2.4 envelope/KDF/asymmetric done 2026-09-20)
+## Phase 2: Data model and crypto core — DONE (T2.1–T2.5 all checked)
 
 - Envelope encryption (per-secret DEK + master key), Argon2id, AEAD (AES-256-GCM / XChaCha20-Poly1305), rotation.
 - Gate: unit + known-answer-vector crypto tests pass, coverage threshold enforced.
@@ -51,7 +51,7 @@
 - [x] T4.5 downtime compensation + clock guard — `ee51c2e`; 8/8 tests; post-recovery grace waits (never fire inside grace), at-most-once backfill, check-in cancels wait, checkClockSkew CLOCK_UNCERTAIN hold; ADR-003 + ADR-004 written
 - [x] T4.6 variant triggers + cancellation window — `dbeddb5`; 9/9 tests; fixed_date (future-validated) + panic (typed confirm, fires at fire_at) + quorum (event-driven t-of-n deceased votes, idempotent `switch:{id}:quorum` key); materializer branches heartbeat vs fire_at; 48h pre-fire cancel window via delivery available_at; cancel route (TOTP step-up) aborts pending jobs + future deliveries + disarms; migration 0004 (trigger_type/fire_at/quorum_threshold, recipients.vote, cancelled states). Phase 4 complete: 103/103 api tests.
 
-## Phase 5: Delivery channels — IMPLEMENTATION COMPLETE (commit gate pending)
+## Phase 5: Delivery channels — DONE (implementation committed; was "commit gate pending")
 
 - Pluggable architecture: SMTP first + webhook + Telegram minimum; retry/backoff, idempotency, receipts, dead-letter queue; recipient pre-approval; per-channel security guidance; payload options (encrypted blob + split key, one-time-view link, direct with explicit risk accept).
 - [x] T5.1 durable dispatcher — `apps/api/src/channels/dispatch.ts`; due-job claim with `FOR UPDATE SKIP LOCKED`, provider outcomes persisted as receipt/retry/dead, jittered backoff, configurable per-job retry budget (`0005_delivery_retry_budget.sql`), and delivery DLQ. `dispatch.test.ts`: 8 real-Postgres tests.
@@ -144,6 +144,36 @@
 - [x] Switch list and detail reads serialize ISO 8601 `createdAt` and `updatedAt`; `ownerEmail` is present only for an administrator's `GET /api/switches?all=1` items and omitted for all detail and non-administrator reads.
 - [x] The dashboard loads the all-switch list once, derives case-insensitive title and status filters locally, presents a neutral zero-match state, formats timestamps, and renders owner metadata only for administrators. Detail settings updates retain read metadata.
 - [x] `docs/API.md` records the response fields and owner-email authorization boundary. Gate evidence: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `pnpm test` passed (API 144, web 59, crypto 64, DB 13, E2E 1); production-preview Playwright checks passed at 1280px, 768px, and 375px with no filter-triggered requests or console errors; visual review PASS.
+
+## Wave 2b: Audit trail upgrade — DONE (2026-09-26)
+
+- [x] Audit log carries a canonical `details` jsonb column with a versioned hash chain (`SHA256(prev|ts|actor|action|target|JCS(details))`), migration `0008_audit_details` re-chained existing rows; a central `sanitizeAuditDetails` redactor drops secrets before persistence, hashing, and API/export serialization.
+- [x] Global and per-switch reads support category (read-time derivation), date-range, and scoped `q` filters (target/actor email); UIs render friendly action/category labels; `switch_updated` records per-field from→to diffs, no-ops carry an explicit marker, downtime recovery writes meaningful bodies.
+- [x] Admin-only CSV/JSON export (10,000-row cap, RFC 4180 quoting, formula neutralization, safe download headers) plus an `audit-chain` verifier check. Oracle-reviewed; docs in `docs/API.md`.
+
+## Wave 2c: TOTP step-up hardening — DONE (2026-09-26)
+
+- [x] Check-in and trigger-cancel routes verify TOTP and advance the replay counter inside the operation transaction (row-locked `FOR UPDATE` re-read, authoritative over any pre-read — no TOCTOU bypass, no counter consumption without effect, no concurrent replay); logout/revoke-all/revoke-sessions/WebAuthn-registration audit writes are transactional; bare-client `writeAudit` calls are rejected by a transaction probe. Regression tests inject audit failure (rollback proof) and concurrent TOTP enablement (403 proof). Oracle-verified.
+
+## Wave 2d: Reports and export center — DONE (2026-09-26)
+
+- [x] `POST /api/reports/exports` (admin-only) streams filtered CSV/JSON (global or one-switch scope) and records every attempt — success with row count, failures with error codes — in the `export_jobs` ledger (migration `0009`, seq-cursor pagination).
+- [x] `GET /api/reports/exports` (admin-only) lists the ledger newest-first with scope/status/format/switch/search filters.
+- [x] Web `Export…` dialog (scope + switch picker, CSV/JSON, category, date range with Today/Yesterday/This week/This month shortcuts, From/To required with distinct validation messages) on the activity log and the `/admin/reports` page, which tables every export with requester, range, format, rows, and status. Documented in `docs/API.md`. Oracle-verified.
+
+## Wave 2e: Admin navigation surfacing — DONE (2026-09-27)
+
+- [x] Admin-only `Activity` and `Reports` links in the header navigation plus prominent Activity log / Reports & exports buttons on the Admin page (replacing hard-to-find inline text links).
+
+## Wave 2f: List pagination and search consistency — DONE (2026-09-27)
+
+- [x] Every list (dashboard switches, users, global activity, per-switch history, reports ledger) shares `ListPagination` (rows-per-page 5/10/15/25/50, Previous/Next, visible range) and `ListSearchInput` styling; server cursor pagination uses limit+1 probing so exact page boundaries never offer an empty page; all user-input `ILIKE` search is wildcard-escaped with explicit `ESCAPE`. Regression tests for boundaries, second-page ranges, and literal `%`/`_` queries. Oracle-verified.
+
+## Wave 2g: E2E selector repair — DONE (maintenance sweep)
+
+- [x] The Playwright bootstrap journey had been red since the guided-switch UI work (guidance `aria-label` regions and the dashboard status filter collided with `getByLabel`/`getByText` selectors). Disambiguated with exact/role-scoped locators; the full bootstrap→release→deliver journey passes again. No app changes were needed.
+
+## Maintenance sweep — IN PROGRESS (dependencies, docs/state refresh, GHSA review)
 
 ## Key decisions
 

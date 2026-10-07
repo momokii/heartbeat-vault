@@ -1,30 +1,55 @@
 ## Task Queue
 
-> Phase 0 gate active. No implementation before design approval.
+> Standing user directive (maintenance loop): keep the repo fully updated — dependencies,
+> docs/state truthfulness, verification green — without stopping until done.
 
-| Field               | Value                                                                   |
-| ------------------- | ----------------------------------------------------------------------- |
-| Task ID             | TASK-001                                                                |
-| Name                | Phase 0 design approval gate                                            |
-| Priority            | High                                                                    |
-| Status              | IN PROGRESS                                                             |
-| Complexity          | M                                                                       |
-| Depends On          | None (research done, `docs/DESIGN.md` proposed)                         |
-| Scope               | User reviews `docs/DESIGN.md` §1–10; approve or request section changes |
-| Acceptance Criteria | Explicit user approval (or change list); then Phase 1+ plan agent       |
-| Security Concerns   | No code before approval; hardened deferred, ADRs only                   |
+| Field               | Value                                                                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Task ID             | TASK-001                                                                                                                                |
+| Name                | Phase 0 design approval gate                                                                                                            |
+| Priority            | High                                                                                                                                    |
+| Status              | DONE (with caveat: implementation proceeded on direct user direction; a formal approval event was never recorded and is not fabricated) |
+| Complexity          | M                                                                                                                                       |
+| Depends On          | None                                                                                                                                    |
+| Scope               | Historical gate; superseded by shipped v1                                                                                               |
+| Acceptance Criteria | Design exists in docs/DESIGN.md; caveat recorded in docs/PROGRESS.md                                                                    |
+| Security Concerns   | None outstanding                                                                                                                        |
 
 | Field               | Value                                                                                     |
 | ------------------- | ----------------------------------------------------------------------------------------- |
 | Task ID             | TASK-002                                                                                  |
 | Name                | Hardened profile (OpenBao vs Vault) follow-up                                             |
 | Priority            | Medium                                                                                    |
-| Status              | TODO                                                                                      |
+| Status              | TODO (deferred by ADR-007 decision, not started)                                          |
 | Complexity          | L                                                                                         |
-| Depends On          | TASK-001, v1 standard profile                                                             |
+| Depends On          | v1 standard profile (done)                                                                |
 | Scope               | Next-development todo per user: ADRs now, implementation later; never a release-path SPOF |
 | Acceptance Criteria | ADR pair written; tracked, not built in v1                                                |
 | Security Concerns   | AppRole least-privilege, Shamir unseal handling, audit devices                            |
+
+| Field               | Value                                                                                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Task ID             | TASK-003                                                                                                                                                                              |
+| Name                | Maintenance sweep: deferred major upgrades                                                                                                                                            |
+| Priority            | Medium                                                                                                                                                                                |
+| Status              | TODO                                                                                                                                                                                  |
+| Complexity          | M                                                                                                                                                                                     |
+| Depends On          | None (evaluation only; no implementation until approved)                                                                                                                              |
+| Scope               | Decide: vite 8, eslint 10 stack, TypeScript 7, vitest 5.0.3 (needs Node ≥22.12 baseline), @noble/hashes 2, @simplewebauthn 14, testcontainers 12, @types/node 26, @types/nodemailer 8 |
+| Acceptance Criteria | Each item has an owner, reason, and re-evaluation trigger                                                                                                                             |
+| Security Concerns   | None directly; keeps security-adjacent deps reviewable                                                                                                                                |
+
+| Field               | Value                                                                         |
+| ------------------- | ----------------------------------------------------------------------------- |
+| Task ID             | TASK-004                                                                      |
+| Name                | Production backup/restore drill                                               |
+| Priority            | High                                                                          |
+| Status              | TODO (never exercised against real data)                                      |
+| Complexity          | M                                                                             |
+| Depends On          | BACKUP_ENCRYPTION_KEY decision                                                |
+| Scope               | Encrypted backup + isolated-restore verification without touching the live DB |
+| Acceptance Criteria | Restore proven in isolation; runbook updated                                  |
+| Security Concerns   | Key custody; never restore over live data                                     |
 
 ### Rules
 
