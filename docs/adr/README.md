@@ -23,7 +23,7 @@ This directory holds Architecture Decision Records for Heartbeat Vault. Each ADR
 | 009 | Auth libraries, Argon2id, TOTP, WebAuthn, rate limit | Accepted (shipped: argon2id login hashing, TOTP + WebAuthn + recovery codes, IP rate limiting) | 2026-09-20 |
 | 010 | Release process, release-please plus GHCR plus keyless signing | Proposed | — |
 
-ADRs 005, 006, and 009 through 010 remain Proposed and are tracked in `docs/DESIGN.md` §9. ADRs 007 and 008 landed in T6.1 as direction only, implementation DEFERRED.
+ADRs 005, 006, and 010 remain Proposed and are tracked in `docs/DESIGN.md` §9. ADRs 007 and 008 landed in T6.1 as direction only, implementation DEFERRED.
 
 ## Conventions
 
