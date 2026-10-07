@@ -23,16 +23,18 @@ test('bootstrap creates, configures, arms, releases, and delivers a switch', asy
   await expect(page.getByRole('heading', { name: 'Your switches' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Create switch' }).click();
-  await page.getByLabel('Name').fill('Emergency release plan');
+  await page.getByLabel('Name', { exact: true }).fill('Emergency release plan');
   await Promise.all([
     page.waitForURL('**/'),
     page.getByRole('button', { name: 'Create paused switch' }).click(),
   ]);
   await expect(page.getByRole('heading', { name: 'Emergency release plan' })).toBeVisible();
-  await expect(page.getByText('Paused', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Your switches' }).getByText('Paused', { exact: true }),
+  ).toBeVisible();
 
   await page.getByRole('link', { name: 'Manage switch' }).click();
-  await page.getByLabel('Address').fill('recipient@example.test');
+  await page.getByRole('textbox', { name: 'Address' }).fill('recipient@example.test');
   const recipientResponse = page.waitForResponse(
     response =>
       /\/api\/switches\/[^/]+\/recipients$/.test(response.url()) &&
@@ -48,7 +50,7 @@ test('bootstrap creates, configures, arms, releases, and delivers a switch', asy
   expect(token).toBeDefined();
 
   await page
-    .getByLabel('Release payload')
+    .getByRole('textbox', { name: 'Release payload' })
     .fill('Release instructions for the designated recipient.');
   const payloadResponse = page.waitForResponse(
     response =>
@@ -79,7 +81,9 @@ test('bootstrap creates, configures, arms, releases, and delivers a switch', asy
 
   await page.getByRole('link', { name: '← Dashboard' }).click();
   await expect(page.getByRole('heading', { name: 'Your switches' })).toBeVisible();
-  await expect(page.getByText('Active', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Your switches' }).getByText('Active', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText(/Next check-in:/)).toBeVisible();
 
   await page.getByRole('link', { name: 'Manage switch' }).click();
@@ -103,7 +107,9 @@ test('bootstrap creates, configures, arms, releases, and delivers a switch', asy
   }).toPass({ timeout: 20_000 });
 
   await page.getByRole('link', { name: '← Dashboard' }).click();
-  await expect(page.getByText('Released', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Your switches' }).getByText('Released', { exact: true }),
+  ).toBeVisible();
 
   const runtime = JSON.parse(
     readFileSync(new URL('../test-results/e2e-runtime.json', import.meta.url), 'utf8'),
