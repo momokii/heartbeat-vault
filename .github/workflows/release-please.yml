@@ -1,6 +1,7 @@
 # Versioning — Conventional Commits → release PRs → tags (BRIEF §12).
 # Merging the release-please PR bumps the version, updates CHANGELOG.md,
-# and creates the vX.Y.Z tag — which triggers release.yml (signed images).
+# and creates the vX.Y.Z tag. The image workflow is called below from this
+# run because GITHUB_TOKEN-created tags do not reliably trigger push workflows.
 name: Release Please
 
 on:
@@ -14,7 +15,22 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           release-type: node
+
+  release-images:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag_name: ${{ needs.release-please.outputs.tag_name }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
