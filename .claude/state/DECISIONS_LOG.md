@@ -151,3 +151,11 @@
   **Alternatives Rejected:** Blind workflow edits without log evidence (stopped after three verified fixes; remaining cause needs owner access); claiming release automation proven (recorded as blocked instead).
   **Security Implications:** None — CI fixes touch workflows/test config only; no auth/session/crypto semantics changed.
   **Impact:** `fix(deps)`, `fix(ci)` commits; CI gate + CodeQL + caddy-smoke green on live runs.
+
+- Ultrawork loop: backup drill, reminders, bulk check-in, delegates, CI diagnosis.
+  **Date:** ultrawork loop session
+  **Context:** Standing directive to implement backlog + recommendations until verified done.
+  **Rationale:** Backup/restore split into installer-provisioned --drill vs explicit --live after two binding Oracle FAILs proved arbitrary-port restore and weak tests unsafe; real drill caught a missing-role recovery gap before passing. Reminders are email-only, at-least-once (documented honestly after Oracle rejected exactly-once claims), with bounded timeouts and redacted errors. Bulk check-in returns per-switch results with per-switch audit rows. Pause-only delegates fail closed on email ambiguity (no lower(email) uniqueness in schema) and cannot resurrect released switches (shared cancel guard). CI gate fixed via phantom workspace dependency; caddy-smoke fixed via valid MASTER_KEY + preview URL; release-please still red pending owner token-permission check.
+  **Alternatives Rejected:** Arbitrary-port restore (bypassable); exactly-once reminder claims (unprovable over SMTP); deleting failing e2e/UI tests instead of fixing selectors; committing vendor AGENTS.md content as project work (tracked separately per vendor instruction).
+  **Security Implications:** No auth/session/crypto semantics weakened; all security-sensitive changes Oracle-reviewed with VERIFIED verdicts; audit coverage extended (delegate__, test_release_sent, reminder__).
+  **Impact:** Waves 3a–3e in PROGRESS.md; API.md documents new endpoints; TASK-004 (backup drill) complete.

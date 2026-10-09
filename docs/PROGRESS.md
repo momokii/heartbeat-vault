@@ -183,13 +183,13 @@
 
 ## Wave 3a: Encrypted backup and isolated restore — DONE (ultrawork loop)
 
-- [x] `install.sh backup` refuses unencrypted output (BACKUP_ENCRYPTION_KEY required, AES-256-CBC/PBKDF2); `restore` split into `--drill` (installer-provisioned disposable DB, no operator host/port, role pre-creation, identity checks, auto-teardown) and explicit `--live` (Compose db by name only, --yes + typed confirmation + 60s prompt bound, COMPOSE/DOCKER env neutralized).
-- [x] Real encrypted backup + isolated drill executed against the live stack: "Restore complete", live DB proven untouched, zero leftovers. First attempt failed honestly on a missing dump-owner role — the drill caught a real recovery gap.
+- [x] `install.sh backup` refuses unencrypted output (AES-256-CBC/PBKDF2); `restore` split into `--drill` (installer-provisioned disposable DB, dump-role pre-creation, identity checks, auto-teardown) and explicit `--live` (Compose db by name only, --yes + typed confirmation + 60s prompt bound, COMPOSE/DOCKER env neutralized).
+- [x] Real encrypted backup + isolated drill executed against the live stack: "Restore complete" with the live DB proven untouched and zero leftovers. The first drill failed honestly on a missing dump-owner role — the drill caught a real recovery gap.
 - [x] Backup suite 11/11 (destructive marker proofs, hostile-env cases, plaintext preservation). Oracle-verified.
 
 ## Wave 3b: Owner deadline reminders — DONE (ultrawork loop)
 
-- [x] Separate reminder-job path (deterministic switch+deadline+stage+channel keys, concurrent-safe materialization, owner email from users).
+- [x] Separate reminder-job path (deterministic switch+deadline+stage+channel keys, concurrent-safe materialization, retry with capped backoff, owner email from users).
 - [x] At-least-once email delivery documented and tested; bounded SMTP + send timeouts with hung-provider isolation proven through the production delivery path; error output redacted; failed sends retry with capped backoff.
 - [x] Scheduler tick materializes and dispatches reminders without disturbing lease reap, trigger claims, or release dispatch. Reminder actions carry their own `reminder` audit category with friendly labels. Oracle-verified.
 
@@ -199,9 +199,16 @@
 
 ## Wave 3d: CI enablement — PARTIAL (gate + smoke green; release-please needs owner action)
 
-- [x] Release-please config/manifest/CHANGELOG seed, README badges, reusable image workflow wiring, Caddy smoke CI job (fixed MASTER_KEY + preview URL; proven locally and green in CI).
+- [x] Release-please config/manifest/CHANGELOG seed, README badges, reusable image workflow wiring, Caddy smoke CI job (fixed MASTER_KEY + preview URL; proven locally and green in CI). Fixed a phantom workspace dependency (`@heartbeat-vault/e2e` → `@heartbeat-vault/db`) that broke CI typecheck.
 - [x] CI gate green on live runs; CodeQL green.
 - [ ] Release-please action step still red after checkout/config/fetch-depth fixes; likely repository Actions token permissions — requires owner GitHub access (Settings → Actions → General → Workflow permissions).
+
+## Wave 3e: Delegates, duplication, urgency, test release — DONE (ultrawork loop)
+
+- [x] Pause-only trusted delegates (per-switch grants by email with fail-closed ambiguity handling, owner-only list/revoke, immediate revocation, released-cancellation blocked for all roles); delegate management UI on switch detail. Oracle-verified.
+- [x] Duplicate-as-template (configuration-only copy into a new paused switch) with dashboard/detail UI.
+- [x] Deadline urgency display on the dashboard (overdue / due-soon / calm).
+- [x] Test-release dry run (marked test messages through configured channels, rate-limited, TOTP-gated, no release-state mutation) with UI trigger. Oracle-verified.
 
 ## Wave 3e: Pause-only trusted delegates — DONE
 
