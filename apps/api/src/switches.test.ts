@@ -686,29 +686,60 @@ describe('switches CRUD', () => {
 });
 
 describe('pause-only switch delegates', () => {
-  it('owner can grant and revoke a registered delegate', async () => {
+  it('owner can grant, list, and revoke a registered delegate by email', async () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     await createUser('delegate@example.com', 'password-12-chars');
-    const delegateId = (
-      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
-    ).rows[0]!.id;
     const granted = await app.inject({
       method: 'POST',
       url: `/api/switches/${switchId}/delegates`,
       headers: authCookie(ownerCookie),
-      payload: { delegateUserId: delegateId },
+      payload: { email: 'delegate@example.com' },
     });
     expect(granted.statusCode).toBe(201);
     const delegationId = (JSON.parse(granted.body) as { id: string }).id;
 
+    const listed = await app.inject({
+      method: 'GET',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toEqual([
+      expect.objectContaining({ id: delegationId, email: 'delegate@example.com' }),
+    ]);
+
+    const unknown = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+      payload: { email: 'nobody@example.com' },
+    });
+    expect(unknown.statusCode).toBe(404);
+
     const revoked = await app.inject({
       method: 'DELETE',
-      url: `/api/switches/${switchId}/delegates/${delegateId}`,
+      url: `/api/switches/${switchId}/delegates/${delegationId}`,
       headers: authCookie(ownerCookie),
     });
     expect(revoked.statusCode).toBe(200);
     expect(
       await pool.query(`SELECT 1 FROM switch_delegations WHERE id=$1`, [delegationId]),
+    ).toMatchObject({ rows: [] });
+  });
+
+  it('refuses to grant when case-variant accounts make the email ambiguous', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('User@Example.com', 'password-12-chars');
+    await createUser('user@example.com', 'password-12-chars');
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+      payload: { email: 'USER@example.com' },
+    });
+    expect(response.statusCode).toBe(404);
+    expect(
+      await pool.query(`SELECT 1 FROM switch_delegations WHERE switch_id=$1`, [switchId]),
     ).toMatchObject({ rows: [] });
   });
 
@@ -723,7 +754,7 @@ describe('pause-only switch delegates', () => {
       method: 'POST',
       url: `/api/switches/${switchId}/delegates`,
       headers: authCookie(ownerCookie),
-      payload: { delegateUserId: delegateId },
+      payload: { email: 'delegate@example.com' },
     });
     expect(grant.statusCode).toBe(201);
 
@@ -797,7 +828,7 @@ describe('pause-only switch delegates', () => {
           method: 'POST',
           url: `/api/switches/${switchId}/delegates`,
           headers: authCookie(ownerCookie),
-          payload: { delegateUserId: delegateId },
+          payload: { email: 'delegate@example.com' },
         })
       ).statusCode,
     ).toBe(201);
@@ -821,26 +852,21 @@ describe('pause-only switch delegates', () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     await createUser('delegate@example.com', 'password-12-chars');
     await createUser('other@example.com', 'password-12-chars');
-    const delegateId = (
-      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
-    ).rows[0]!.id;
     const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
     const otherCookie = await loginAs('other@example.com', 'password-12-chars');
-    expect(
-      (
-        await app.inject({
-          method: 'POST',
-          url: `/api/switches/${switchId}/delegates`,
-          headers: authCookie(ownerCookie),
-          payload: { delegateUserId: delegateId },
-        })
-      ).statusCode,
-    ).toBe(201);
+    const granted = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+      payload: { email: 'delegate@example.com' },
+    });
+    expect(granted.statusCode).toBe(201);
+    const delegationId = (JSON.parse(granted.body) as { id: string }).id;
     expect(
       (
         await app.inject({
           method: 'DELETE',
-          url: `/api/switches/${switchId}/delegates/${delegateId}`,
+          url: `/api/switches/${switchId}/delegates/${delegationId}`,
           headers: authCookie(ownerCookie),
         })
       ).statusCode,
@@ -861,12 +887,6 @@ describe('pause-only switch delegates', () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     await createUser('delegate@example.com', 'password-12-chars');
     await createUser('other@example.com', 'password-12-chars');
-    const delegateId = (
-      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
-    ).rows[0]!.id;
-    const otherId = (
-      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='other@example.com'`)
-    ).rows[0]!.id;
     const otherCookie = await loginAs('other@example.com', 'password-12-chars');
     const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
 
@@ -874,15 +894,16 @@ describe('pause-only switch delegates', () => {
       method: 'POST',
       url: `/api/switches/${switchId}/delegates`,
       headers: authCookie(ownerCookie),
-      payload: { delegateUserId: delegateId },
+      payload: { email: 'delegate@example.com' },
     });
     expect(ownerGrant.statusCode).toBe(201);
+    const delegationId = (JSON.parse(ownerGrant.body) as { id: string }).id;
 
     const duplicate = await app.inject({
       method: 'POST',
       url: `/api/switches/${switchId}/delegates`,
       headers: authCookie(ownerCookie),
-      payload: { delegateUserId: delegateId },
+      payload: { email: 'delegate@example.com' },
     });
     expect(duplicate.statusCode).toBe(409);
     expect(JSON.parse(duplicate.body)).toEqual({ error: 'already_delegated' });
@@ -891,7 +912,7 @@ describe('pause-only switch delegates', () => {
       method: 'POST',
       url: `/api/switches/${switchId}/delegates`,
       headers: authCookie(otherCookie),
-      payload: { delegateUserId: delegateId },
+      payload: { email: 'delegate@example.com' },
     });
     expect(otherGrant.statusCode).toBe(404);
     expect(JSON.parse(otherGrant.body)).toEqual({ error: 'not_found' });
@@ -900,14 +921,14 @@ describe('pause-only switch delegates', () => {
       method: 'POST',
       url: `/api/switches/${switchId}/delegates`,
       headers: authCookie(delegateCookie),
-      payload: { delegateUserId: otherId },
+      payload: { email: 'other@example.com' },
     });
     expect(delegateGrant.statusCode).toBe(404);
     expect(JSON.parse(delegateGrant.body)).toEqual({ error: 'not_found' });
 
     const otherRevoke = await app.inject({
       method: 'DELETE',
-      url: `/api/switches/${switchId}/delegates/${delegateId}`,
+      url: `/api/switches/${switchId}/delegates/${delegationId}`,
       headers: authCookie(otherCookie),
     });
     expect(otherRevoke.statusCode).toBe(404);
@@ -927,7 +948,7 @@ describe('pause-only switch delegates', () => {
           method: 'POST',
           url: `/api/switches/${switchId}/delegates`,
           headers: authCookie(ownerCookie),
-          payload: { delegateUserId: delegateId },
+          payload: { email: 'delegate@example.com' },
         })
       ).statusCode,
     ).toBe(201);
@@ -990,7 +1011,7 @@ describe('pause-only switch delegates', () => {
           method: 'POST',
           url: `/api/switches/${switchId}/delegates`,
           headers: authCookie(ownerCookie),
-          payload: { delegateUserId: delegateId },
+          payload: { email: 'delegate@example.com' },
         })
       ).statusCode,
     ).toBe(201);

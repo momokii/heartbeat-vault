@@ -324,27 +324,54 @@ export async function registerSwitchRoutes(
       .send(res.rows.map(row => serializeSwitch(row, all && user.role === 'admin')));
   });
 
+  app.get('/api/switches/:id/delegates', { preHandler: requireAuth }, async (request, reply) => {
+    const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
+    if (!id.success) return reply.status(404).send({ error: 'not_found' });
+    const user = request.user!;
+    const row = await loadSwitch(pool, id.data, user.id, false);
+    if (!row || row.owner_id !== user.id) return reply.status(404).send({ error: 'not_found' });
+    const list = await pool.query<{ id: string; email: string; createdAt: Date }>(
+      `SELECT d.id, u.email, d.created_at AS "createdAt"
+       FROM switch_delegations d JOIN users u ON u.id = d.delegate_user_id
+       WHERE d.switch_id=$1 ORDER BY d.created_at`,
+      [id.data],
+    );
+    return reply.status(200).send(
+      list.rows.map(item => ({
+        id: item.id,
+        email: item.email,
+        createdAt: item.createdAt.toISOString(),
+      })),
+    );
+  });
+
   app.post('/api/switches/:id/delegates', { preHandler: requireAuth }, async (request, reply) => {
     const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
     if (!id.success) return reply.status(404).send({ error: 'not_found' });
-    const parsed = z.object({ delegateUserId: uuidSchema }).safeParse(request.body);
+    const parsed = z.object({ email: z.string().trim().email() }).safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
     const user = request.user!;
     const row = await loadSwitch(pool, id.data, user.id, false);
-    if (!row || row.owner_id !== user.id || parsed.data.delegateUserId === user.id) {
+    if (!row || row.owner_id !== user.id) {
       return reply.status(404).send({ error: 'not_found' });
     }
-    const target = await pool.query<{ id: string }>('SELECT id FROM users WHERE id=$1', [
-      parsed.data.delegateUserId,
-    ]);
-    if (!target.rows[0]) return reply.status(404).send({ error: 'not_found' });
+    const target = await pool.query<{ id: string }>(
+      'SELECT id FROM users WHERE lower(email)=lower($1)',
+      [parsed.data.email],
+    );
+    // Fail closed on ambiguity: without a lower(email) uniqueness guarantee,
+    // multiple case-variant accounts could match — grant to none of them.
+    const delegateId = target.rows.length === 1 ? target.rows[0]!.id : undefined;
+    if (!delegateId || delegateId === user.id) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const inserted = await client.query<{ id: string; created_at: Date }>(
         `INSERT INTO switch_delegations (switch_id, delegate_user_id, created_by)
          VALUES ($1,$2,$3) RETURNING id, created_at`,
-        [id.data, parsed.data.delegateUserId, user.id],
+        [id.data, delegateId, user.id],
       );
       const delegation = inserted.rows[0];
       if (!delegation) throw new Error('delegation insert returned no row');
@@ -354,13 +381,12 @@ export async function registerSwitchRoutes(
         target: id.data,
         ip: request.ip,
         requestId: request.id,
-        details: { delegationId: delegation.id, delegateUserId: parsed.data.delegateUserId },
+        details: { delegationId: delegation.id, delegateUserId: delegateId },
       });
       await client.query('COMMIT');
       return reply.status(201).send({
         id: delegation.id,
-        switchId: id.data,
-        delegateUserId: parsed.data.delegateUserId,
+        delegateUserId: delegateId,
         createdAt: delegation.created_at.toISOString(),
       });
     } catch (err) {
@@ -394,9 +420,9 @@ export async function registerSwitchRoutes(
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        const deleted = await client.query<{ id: string }>(
-          `DELETE FROM switch_delegations WHERE switch_id=$1 AND delegate_user_id=$2 RETURNING id`,
-          [id.data, delegateId.data],
+        const deleted = await client.query<{ id: string; delegate_user_id: string }>(
+          `DELETE FROM switch_delegations WHERE id=$1 AND switch_id=$2 RETURNING id, delegate_user_id`,
+          [delegateId.data, id.data],
         );
         const delegation = deleted.rows[0];
         if (!delegation) {
@@ -409,7 +435,7 @@ export async function registerSwitchRoutes(
           target: id.data,
           ip: request.ip,
           requestId: request.id,
-          details: { delegationId: delegation.id, delegateUserId: delegateId.data },
+          details: { delegationId: delegation.id, delegateUserId: delegation.delegate_user_id },
         });
         await client.query('COMMIT');
         return reply.status(200).send({ ok: true });
