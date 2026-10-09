@@ -62,17 +62,38 @@ Create a database backup with:
 ./install.sh backup
 ```
 
-Backups are written under `backups/` as compressed SQL. Set a real `BACKUP_ENCRYPTION_KEY` in `.env` before using this for real data; otherwise the installer warns and leaves the backup unencrypted. Protect backup files as sensitive material even when encrypted.
+Backups are written under `backups/` as compressed SQL and are always encrypted
+(`.sql.gz.enc`, AES-256-CBC with PBKDF2). A real `BACKUP_ENCRYPTION_KEY` in `.env`
+is required — the installer refuses to create an unencrypted backup. Protect backup
+files as sensitive material even when encrypted. Keep the `.env` keys needed to
+decrypt application payloads separately from the database backup.
 
-Restore overwrites the current database and requires an explicit confirmation:
+Restore has two explicit modes — there is no bare restore and no way to point a
+restore at an arbitrary database:
 
 ```bash
-./install.sh restore backups/backup-YYYYMMDDTHHMMSSZ.sql.gz --yes
-# or, when backup encryption is configured:
-./install.sh restore backups/backup-YYYYMMDDTHHMMSSZ.sql.gz.enc --yes
+# Safe verification: provisions a disposable database, restores into it,
+# verifies the data landed, then destroys it. Never touches live data.
+./install.sh restore --drill backups/backup-YYYYMMDDTHHMMSSZ.sql.gz.enc --yes
+
+# Disaster recovery only: overwrites the Compose database. Requires --yes
+# plus typing the database name at the prompt (60s limit). Read the
+# confirmation message carefully and back up first.
+./install.sh restore --live backups/backup-YYYYMMDDTHHMMSSZ.sql.gz.enc --yes
 ```
 
-Test restoration in an isolated environment before relying on a backup. Keep the `.env` keys needed to decrypt application payloads separately from the database backup.
+The drill provisions its own PostgreSQL container with random credentials, recreates
+any roles the dump references, checks container and marker identity before and
+after streaming, and removes the container plus any decrypted temporary files on
+every exit path. Test restoration with `--drill` before relying on a backup.
+
+Drill evidence (2026-10-10, operator run): encrypted backup
+`backups/backup-20261009T181400Z.sql.gz.enc` restored into a disposable target
+with "Restore complete"; the live database contains no drill markers and its
+row counts are unchanged; no containers, ports, plaintext files, or backup
+artifacts remained afterward. The first drill attempt failed honestly on a
+missing dump-owner role, which led to the role-recreation step above — drills
+catch real recovery gaps.
 
 ## Upgrade and uninstall
 
