@@ -39,17 +39,29 @@
 | Acceptance Criteria | Each item has an owner, reason, and re-evaluation trigger                                                                                                                             |
 | Security Concerns   | None directly; keeps security-adjacent deps reviewable                                                                                                                                |
 
-| Field               | Value                                                                         |
-| ------------------- | ----------------------------------------------------------------------------- |
-| Task ID             | TASK-004                                                                      |
-| Name                | Production backup/restore drill                                               |
-| Priority            | High                                                                          |
-| Status              | TODO (never exercised against real data)                                      |
-| Complexity          | M                                                                             |
-| Depends On          | BACKUP_ENCRYPTION_KEY decision                                                |
-| Scope               | Encrypted backup + isolated-restore verification without touching the live DB |
-| Acceptance Criteria | Restore proven in isolation; runbook updated                                  |
-| Security Concerns   | Key custody; never restore over live data                                     |
+| Field               | Value                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| Task ID             | TASK-004                                                                               |
+| Name                | Production backup/restore drill                                                        |
+| Priority            | High                                                                                   |
+| Status              | DONE (encrypted backup + isolated drill executed 2026-10-10; live DB proven untouched) |
+| Complexity          | M                                                                                      |
+| Depends On          | BACKUP_ENCRYPTION_KEY (set)                                                            |
+| Scope               | Encrypted backup + isolated-restore verification without touching the live DB          |
+| Acceptance Criteria | Restore proven in isolation; runbook updated (docs/OPERATIONS.md)                      |
+| Security Concerns   | Key custody; never restore over live data                                              |
+
+| Field               | Value                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| Task ID             | TASK-005                                                                            |
+| Name                | Release-please red: owner token-permission/log check                                |
+| Priority            | Medium                                                                              |
+| Status              | TODO (blocked on owner GitHub access)                                               |
+| Complexity          | S                                                                                   |
+| Depends On          | CI workflow fixes (done: checkout, config, fetch-depth, smoke)                      |
+| Scope               | Paste failing step log OR check Settings → Actions → General → Workflow permissions |
+| Acceptance Criteria | Release-please job green on a live run, or root cause identified                    |
+| Security Concerns   | None (workflow permissions review is itself good hygiene)                           |
 
 ### Rules
 
