@@ -262,6 +262,187 @@ describe('switches CRUD', () => {
     ).toBe(201);
   });
 
+  it('duplicates configuration as a paused template without operational state', async () => {
+    const { ownerCookie, switchId: sourceId } = await scaffoldArmed({ mode: 'asymmetric_key' });
+    const trigger = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${sourceId}/trigger`,
+      headers: authCookie(ownerCookie),
+      payload: { type: 'quorum', threshold: 3 },
+    });
+    expect(trigger.statusCode).toBe(200);
+    await pool.query(
+      `UPDATE switches
+       SET status='active', heartbeat_token_hash='source-token-hash',
+           dry_run=true, release_policy='fail_deadly',
+           heartbeat_started_at=clock_timestamp(), next_deadline=clock_timestamp() + interval '1 day'
+       WHERE id=$1`,
+      [sourceId],
+    );
+    await pool.query(
+      `INSERT INTO heartbeat_links (switch_id, token_hash, expires_at)
+       VALUES ($1, 'source-link-hash', clock_timestamp() + interval '1 day')`,
+      [sourceId],
+    );
+    await pool.query(`INSERT INTO heartbeats (switch_id, method) VALUES ($1, 'api')`, [sourceId]);
+    await pool.query(
+      `INSERT INTO trigger_jobs (switch_id, deadline_at, idempotency_key)
+       VALUES ($1, clock_timestamp(), 'source-trigger-job')`,
+      [sourceId],
+    );
+
+    const duplicated = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${sourceId}/duplicate`,
+      headers: authCookie(ownerCookie),
+      payload: { title: 'Copied template' },
+    });
+
+    expect(duplicated.statusCode).toBe(201);
+    const body = JSON.parse(duplicated.body) as { id: string; status: string; dryRun: boolean };
+    expect(body.status).toBe('paused');
+    expect(body.dryRun).toBe(true);
+    const source = await pool.query<{
+      owner_id: string;
+      mode: string;
+      heartbeat_interval: string;
+      grace_window: string;
+      dry_run: boolean;
+      release_policy: string;
+      trigger_type: string;
+      quorum_threshold: number | null;
+    }>(
+      `SELECT owner_id, mode, heartbeat_interval::text, grace_window::text, dry_run, release_policy,
+              trigger_type, quorum_threshold
+       FROM switches WHERE id=$1`,
+      [sourceId],
+    );
+    const target = await pool.query<{
+      owner_id: string;
+      title: string;
+      mode: string;
+      status: string;
+      heartbeat_interval: string;
+      grace_window: string;
+      dry_run: boolean;
+      release_policy: string;
+      trigger_type: string;
+      quorum_threshold: number | null;
+      heartbeat_token_hash: string | null;
+      heartbeat_started_at: Date | null;
+      next_deadline: Date | null;
+      fire_at: Date | null;
+    }>(
+      `SELECT owner_id, title, mode, status, heartbeat_interval::text, grace_window::text, dry_run,
+              release_policy, trigger_type, quorum_threshold, heartbeat_token_hash,
+              heartbeat_started_at, next_deadline, fire_at
+       FROM switches WHERE id=$1`,
+      [body.id],
+    );
+    expect(target.rows[0]).toMatchObject({
+      owner_id: source.rows[0]!.owner_id,
+      title: 'Copied template',
+      mode: source.rows[0]!.mode,
+      status: 'paused',
+      heartbeat_interval: source.rows[0]!.heartbeat_interval,
+      grace_window: source.rows[0]!.grace_window,
+      dry_run: source.rows[0]!.dry_run,
+      release_policy: source.rows[0]!.release_policy,
+      trigger_type: source.rows[0]!.trigger_type,
+      quorum_threshold: source.rows[0]!.quorum_threshold,
+      heartbeat_token_hash: null,
+      heartbeat_started_at: null,
+      next_deadline: null,
+      fire_at: null,
+    });
+
+    for (const table of [
+      'sealed_payloads',
+      'recipients',
+      'heartbeat_links',
+      'heartbeats',
+      'trigger_jobs',
+    ]) {
+      const count = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM ${table} WHERE switch_id=$1`,
+        [body.id],
+      );
+      expect(count.rows[0]!.count).toBe('0');
+    }
+    const audit = await pool.query<{ actor_id: string; details: Record<string, unknown> }>(
+      `SELECT actor_id, details FROM audit_log WHERE action='switch_created' AND target=$1`,
+      [body.id],
+    );
+    expect(audit.rows[0]).toMatchObject({
+      actor_id: source.rows[0]!.owner_id,
+      details: expect.objectContaining({ duplicatedFrom: sourceId }),
+    });
+  });
+
+  it('applies create title validation and owner uniqueness to duplication', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    for (const title of ['', 'x'.repeat(201)]) {
+      const invalid = await app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/duplicate`,
+        headers: authCookie(ownerCookie),
+        payload: { title },
+      });
+      expect(invalid.statusCode).toBe(400);
+    }
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/duplicate`,
+      headers: authCookie(ownerCookie),
+      payload: { title: 'Test switch' },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(JSON.parse(duplicate.body)).toEqual({ error: 'duplicate_title' });
+  });
+
+  it('hides missing and foreign duplicate sources, while admins duplicate as themselves', async () => {
+    const { ownerId, switchId } = await scaffoldArmed();
+    await createUser('mallory-duplicate@example.com', 'password-12-chars');
+    const malloryCookie = await loginAs('mallory-duplicate@example.com', 'password-12-chars');
+    const foreign = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/duplicate`,
+      headers: authCookie(malloryCookie),
+      payload: { title: 'Foreign copy' },
+    });
+    expect(foreign.statusCode).toBe(404);
+    expect(JSON.parse(foreign.body)).toEqual({ error: 'not_found' });
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/switches/00000000-0000-0000-0000-000000000000/duplicate`,
+      headers: authCookie(malloryCookie),
+      payload: { title: 'Missing copy' },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(JSON.parse(missing.body)).toEqual({ error: 'not_found' });
+
+    await createUser('admin-duplicate@example.com', 'password-12-chars', 'admin');
+    const adminCookie = await loginAs('admin-duplicate@example.com', 'password-12-chars');
+    const admin = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/duplicate`,
+      headers: authCookie(adminCookie),
+      payload: { title: 'Admin copy' },
+    });
+    expect(admin.statusCode).toBe(201);
+    const adminCopy = JSON.parse(admin.body) as { id: string };
+    const owner = await pool.query<{ id: string }>(
+      `SELECT owner_id AS id FROM switches WHERE id=$1`,
+      [adminCopy.id],
+    );
+    const adminUser = await pool.query<{ id: string }>(`SELECT id FROM users WHERE email=$1`, [
+      'admin-duplicate@example.com',
+    ]);
+    expect(owner.rows[0]!.id).toBe(adminUser.rows[0]!.id);
+    void ownerId;
+  });
+
   it('owner lists own switches; other user sees 404-shape; admin sees all', async () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     await createUser('mallory@example.com', 'password-12-chars');

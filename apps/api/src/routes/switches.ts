@@ -186,6 +186,90 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
     }
   });
 
+  app.post('/api/switches/:id/duplicate', { preHandler: requireAuth }, async (request, reply) => {
+    const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
+    if (!id.success) return reply.status(404).send({ error: 'not_found' });
+    const parsed = z.object({ title: createSchema.shape.title }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
+    const user = request.user!;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const sourceResult = await client.query<{
+        owner_id: string;
+        mode: string;
+        heartbeat_interval: string;
+        grace_window: string;
+        dry_run: boolean;
+        release_policy: string;
+        trigger_type: string;
+        fire_at: Date | null;
+        quorum_threshold: number | null;
+      }>(
+        `SELECT owner_id, mode, heartbeat_interval, grace_window, dry_run, release_policy,
+                trigger_type, fire_at, quorum_threshold
+         FROM switches WHERE id=$1 FOR SHARE`,
+        [id.data],
+      );
+      const source = sourceResult.rows[0];
+      if (!source || (user.role !== 'admin' && source.owner_id !== user.id)) {
+        await client.query('ROLLBACK');
+        return reply.status(404).send({ error: 'not_found' });
+      }
+      const inserted = await client.query<{ id: string }>(
+        `INSERT INTO switches (
+           owner_id, title, mode, status, heartbeat_interval, grace_window, dry_run,
+           release_policy, trigger_type, fire_at, quorum_threshold, heartbeat_started_at,
+           next_deadline, heartbeat_token_hash
+         )
+         VALUES ($1, $2, $3, 'paused', $4, $5, $6, $7, $8, $9, $10, NULL, NULL, NULL)
+         RETURNING id`,
+        [
+          user.id,
+          parsed.data.title,
+          source.mode,
+          source.heartbeat_interval,
+          source.grace_window,
+          source.dry_run,
+          source.release_policy,
+          source.trigger_type,
+          source.fire_at,
+          source.quorum_threshold,
+        ],
+      );
+      const newId = inserted.rows[0]?.id;
+      if (!newId) throw new Error('duplicate switch insert returned no id');
+      await writeAudit(client, {
+        actorId: user.id,
+        action: 'switch_created',
+        target: newId,
+        ip: request.ip,
+        requestId: request.id,
+        details: {
+          title: parsed.data.title,
+          mode: source.mode,
+          status: 'paused',
+          heartbeatIntervalHours: intervalToHours(source.heartbeat_interval),
+          graceWindowHours: intervalToHours(source.grace_window),
+          dryRun: source.dry_run,
+          releasePolicy: source.release_policy,
+          duplicatedFrom: id.data,
+        },
+      });
+      await client.query('COMMIT');
+      return reply.status(201).send({ id: newId, status: 'paused', dryRun: source.dry_run });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      if (isDuplicateSwitchTitleError(err)) {
+        return reply.status(409).send({ error: 'duplicate_title' });
+      }
+      request.log.error(err);
+      return reply.status(500).send({ error: 'internal_error' });
+    } finally {
+      client.release();
+    }
+  });
+
   app.get('/api/switches', { preHandler: requireAuth }, async (request, reply) => {
     const user = request.user!;
     const all = (request.query as Record<string, string | undefined>)?.['all'] === '1';
