@@ -91,14 +91,12 @@ export async function runInstaller(
   }
 }
 
-export async function makePlainBackup(root: string): Promise<string> {
+export async function makePlainBackup(
+  root: string,
+  sql = 'SELECT current_database();',
+): Promise<string> {
   const backup = join(root, 'input.sql.gz');
-  await execFileAsync('sh', [
-    '-c',
-    `printf '%s\n' 'SELECT current_database();' | gzip > "$1"`,
-    '--',
-    backup,
-  ]);
+  await execFileAsync('sh', ['-c', `printf '%s\n' "$2" | gzip > "$1"`, '--', backup, sql]);
   return backup;
 }
 

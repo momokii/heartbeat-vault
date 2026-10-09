@@ -21,8 +21,6 @@ let database: StartedPostgreSqlContainer;
 let pool: Pool;
 let liveDatabase: StartedPostgreSqlContainer;
 let livePool: Pool;
-const restoreTargetArgs = ['--target-host', '127.0.0.1', '--target-port', '25432'];
-
 describe('installer backup and restore safety', () => {
   beforeAll(async () => {
     const name = `heartbeat-restore-${randomBytes(6).toString('hex')}`;
@@ -115,25 +113,27 @@ describe('installer backup and restore safety', () => {
     }
   });
 
-  it('restores only to an explicit isolated target after checking current_database()', async () => {
+  it('restores destructive SQL into an installer-owned drill target and leaves live Compose DB untouched', async () => {
     const root = await createHarness(database, TEST_KEY);
     try {
-      const encrypted = await encryptBackup(await makePlainBackup(root));
-      await livePool.query('CREATE TABLE restore_live_sentinel (value text PRIMARY KEY)');
-      await livePool.query("INSERT INTO restore_live_sentinel VALUES ('untouched')");
-      const liveBefore = await livePool.query('SELECT value FROM restore_live_sentinel');
-      const result = await runInstaller(
-        root,
-        ['restore', encrypted, '--yes', ...restoreTargetArgs],
-        {
-          HV_DOCKER_LOG: join(root, 'docker.log'),
-          HV_PSQL_INPUT: join(root, 'psql.sql'),
-          HV_USE_REAL_DOCKER: '1',
-        },
+      const marker = `drill-${randomBytes(8).toString('hex')}`;
+      const encrypted = await encryptBackup(
+        await makePlainBackup(
+          root,
+          `CREATE TABLE restore_drill_marker (value text PRIMARY KEY); INSERT INTO restore_drill_marker VALUES ('${marker}');`,
+        ),
       );
+      await livePool.query('DROP TABLE IF EXISTS restore_drill_marker');
+      const result = await runInstaller(root, ['restore', '--drill', encrypted, '--yes'], {
+        HV_DOCKER_LOG: join(root, 'docker.log'),
+        HV_PSQL_INPUT: join(root, 'psql.sql'),
+        HV_USE_REAL_DOCKER: '1',
+      });
       expect(result.status, result.stderr).toBe(0);
-      const liveAfter = await livePool.query('SELECT value FROM restore_live_sentinel');
-      expect(liveAfter.rows).toEqual(liveBefore.rows);
+      const liveMarker = await livePool.query(
+        "SELECT to_regclass('public.restore_drill_marker') AS table_name",
+      );
+      expect(liveMarker.rows[0]?.table_name).toBeNull();
     } finally {
       await cleanupHarness(root);
     }
@@ -143,7 +143,7 @@ describe('installer backup and restore safety', () => {
     const root = await createHarness(database, TEST_KEY);
     try {
       const encrypted = await encryptBackup(await makePlainBackup(root));
-      const result = await runInstaller(root, ['restore', encrypted, ...restoreTargetArgs], {
+      const result = await runInstaller(root, ['restore', '--drill', encrypted], {
         HV_DOCKER_LOG: join(root, 'docker.log'),
         HV_PSQL_INPUT: join(root, 'psql.sql'),
       });
@@ -162,7 +162,7 @@ describe('installer backup and restore safety', () => {
     const root = await createHarness(database, TEST_KEY);
     try {
       const encrypted = await encryptBackup(await makePlainBackup(root));
-      await runInstaller(root, ['restore', encrypted, '--yes', ...restoreTargetArgs], {
+      await runInstaller(root, ['restore', '--drill', encrypted, '--yes'], {
         HV_DOCKER_LOG: join(root, 'docker.log'),
         HV_PSQL_INPUT: join(root, 'psql.sql'),
         HV_USE_REAL_DOCKER: '1',
@@ -178,23 +178,19 @@ describe('installer backup and restore safety', () => {
     const root = await createHarness(database, TEST_KEY);
     try {
       const encrypted = await encryptBackup(await makePlainBackup(root));
-      const child = spawn(
-        join(root, 'install.sh'),
-        ['restore', encrypted, '--yes', ...restoreTargetArgs],
-        {
-          cwd: root,
-          detached: true,
-          env: {
-            ...process.env,
-            PATH: `${join(root, 'crypto-bin')}:${process.env['PATH']}`,
-            HV_DOCKER_LOG: join(root, 'docker.log'),
-            HV_PSQL_INPUT: join(root, 'psql.sql'),
-            HV_BLOCK_RESTORE: '1',
-            HV_USE_REAL_DOCKER: '1',
-            HV_DELAY_DECRYPTION: '1',
-          },
+      const child = spawn(join(root, 'install.sh'), ['restore', '--drill', encrypted, '--yes'], {
+        cwd: root,
+        detached: true,
+        env: {
+          ...process.env,
+          PATH: `${join(root, 'crypto-bin')}:${process.env['PATH']}`,
+          HV_DOCKER_LOG: join(root, 'docker.log'),
+          HV_PSQL_INPUT: join(root, 'psql.sql'),
+          HV_BLOCK_RESTORE: '1',
+          HV_USE_REAL_DOCKER: '1',
+          HV_DELAY_DECRYPTION: '1',
         },
-      );
+      });
       await new Promise(resolve => setTimeout(resolve, 250));
       const pid = child.pid;
       if (pid === undefined) throw new Error('Expected restore process to have a PID');
@@ -215,7 +211,7 @@ describe('installer backup and restore safety', () => {
     const root = await createHarness(database, TEST_KEY);
     try {
       const plain = await makePlainBackup(root);
-      const result = await runInstaller(root, ['restore', plain, '--yes', ...restoreTargetArgs], {
+      const result = await runInstaller(root, ['restore', '--drill', plain, '--yes'], {
         HV_USE_REAL_DOCKER: '1',
       });
       expect(result.status, result.stderr).toBe(0);
@@ -225,20 +221,40 @@ describe('installer backup and restore safety', () => {
     }
   });
 
-  it('does not allow the current restore path to target live Compose db service', async () => {
+  it('refuses live restore without the typed database confirmation', async () => {
     const root = await createHarness(database);
     try {
-      const result = await runInstaller(root, [
-        'restore',
-        await makePlainBackup(root),
-        '--yes',
-        '--target-host',
-        'db',
-        '--target-port',
-        '5432',
-      ]);
+      const result = await runInstaller(
+        root,
+        ['restore', '--live', await makePlainBackup(root), '--yes'],
+        { COMPOSE_FILE: '/tmp/attacker-compose.yml', COMPOSE_PROJECT_NAME: 'attacker' },
+      );
       expect(result.status).toBe(2);
-      expect(result.stderr).toMatch(/isolated target/i);
+      expect(result.stderr).toMatch(/type.*database name|confirmation/i);
+    } finally {
+      await cleanupHarness(root);
+    }
+  });
+
+  it('rejects arbitrary restore target flags and compose override smuggling', async () => {
+    const root = await createHarness(database);
+    try {
+      const result = await runInstaller(
+        root,
+        [
+          'restore',
+          '--drill',
+          await makePlainBackup(root),
+          '--yes',
+          '--target-host',
+          '127.0.0.1',
+          '--target-port',
+          '25432',
+        ],
+        { COMPOSE_FILE: '/tmp/attacker-compose.yml', COMPOSE_PROJECT_NAME: 'attacker' },
+      );
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(/unexpected argument|target/i);
     } finally {
       await cleanupHarness(root);
     }

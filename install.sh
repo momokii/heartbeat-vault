@@ -13,7 +13,8 @@
 #   ./install.sh install [--prod] [--tls internal|le|byo] [--env development|production]
 #   ./install.sh status
 #   ./install.sh backup
-#   ./install.sh restore <backup-file> [--yes]
+#   ./install.sh restore --drill <backup-file> --yes
+#   ./install.sh restore --live <backup-file> --yes
 #   ./install.sh uninstall [--volumes] [--yes]
 #   ./install.sh upgrade
 #
@@ -34,8 +35,7 @@ TLS_MODE="internal"
 YES=0
 KEEP_VOLUMES=0
 RESTORE_FILE=''
-RESTORE_TARGET_HOST=''
-RESTORE_TARGET_PORT=''
+RESTORE_MODE=''
 
 log() { printf '[install] %s\n' "$1"; }
 warn() { printf '[install] WARN: %s\n' "$1"; }
@@ -75,15 +75,11 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --yes) YES=1; shift ;;
-    --target-host)
-      RESTORE_TARGET_HOST="${2:-}"
-      [ -n "$RESTORE_TARGET_HOST" ] || { err "--target-host requires a value"; exit 2; }
-      shift 2
-      ;;
-    --target-port)
-      RESTORE_TARGET_PORT="${2:-}"
-      [ -n "$RESTORE_TARGET_PORT" ] || { err "--target-port requires a value"; exit 2; }
-      shift 2
+    --drill | --live)
+      [ "$SUBCOMMAND" = "restore" ] || { err "$1 is only valid for restore"; exit 2; }
+      [ -z "$RESTORE_MODE" ] || { err "restore accepts exactly one of --drill or --live"; exit 2; }
+      RESTORE_MODE="${1#--}"
+      shift
       ;;
     --volumes) KEEP_VOLUMES=1; shift ;;
     *)
@@ -341,48 +337,24 @@ cmd_backup() {
   log "Backup written: $encrypted ($(du -h "$encrypted" 2>/dev/null | cut -f1))"
 }
 
-cmd_restore() {
-  local file="$1"
+cmd_restore_modes() {
+  local file="$1" temp_plaintext='' drill_container=''
   if [ -z "$file" ] || [ ! -f "$file" ]; then
-    err "restore requires an existing backup file: ./install.sh restore backups/backup-....sql.gz[.enc] --yes"
+    err "restore requires an existing backup file"
+    exit 2
+  fi
+  if [ -z "$RESTORE_MODE" ]; then
+    err "restore requires exactly one mode: --drill or --live"
     exit 2
   fi
   if [ "$YES" != 1 ]; then
-    err "Restore OVERWRITES the current database. Re-run with --yes to confirm."
-    exit 2
-  fi
-  case "$RESTORE_TARGET_HOST" in
-    127.0.0.1) ;;
-    *)
-      err "Restore requires an explicit isolated target on 127.0.0.1; refusing live Compose targets."
-      exit 2
-      ;;
-  esac
-  case "$RESTORE_TARGET_PORT" in
-    '' | *[!0-9]*)
-      err "Restore requires an explicit numeric isolated target port."
-      exit 2
-      ;;
-  esac
-  local live_port
-  live_port=$(compose port db 5432 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n 1 || true)
-  if [ -n "$live_port" ] && [ "$RESTORE_TARGET_PORT" = "$live_port" ]; then
-    err "Restore target port is the live Compose database port; refusing."
+    err "Restore is destructive. Re-run with --yes to confirm."
     exit 2
   fi
   load_db_config
-  local source_backup="$file" temp_plaintext='' target_user target_db target_password
-  target_user=$(env_value RESTORE_TARGET_USER || true)
-  target_db=$(env_value RESTORE_TARGET_DB || true)
-  target_password=$(env_value RESTORE_TARGET_PASSWORD || true)
-  target_user=${target_user:-$PG_USER}
-  target_db=${target_db:-$PG_DB}
-  if [ -z "$target_password" ]; then
-    err "RESTORE_TARGET_PASSWORD is required for the isolated restore target."
-    exit 1
-  fi
   cleanup_restore() {
     [ -z "$temp_plaintext" ] || rm -f -- "$temp_plaintext"
+    [ -z "$drill_container" ] || docker rm -f "$drill_container" >/dev/null 2>&1 || true
   }
   trap 'cleanup_restore; exit 143' INT TERM
   trap cleanup_restore EXIT
@@ -390,38 +362,55 @@ cmd_restore() {
     *.enc)
       local key
       key=$(env_value BACKUP_ENCRYPTION_KEY || true)
-      if [ -z "$key" ]; then
-        err "Backup is encrypted but BACKUP_ENCRYPTION_KEY is not set."
-        exit 1
-      fi
+      [ -n "$key" ] || { err "Backup is encrypted but BACKUP_ENCRYPTION_KEY is not set."; exit 1; }
       temp_plaintext=$(mktemp "${TMPDIR:-/tmp}/heartbeat-restore.XXXXXX.sql.gz")
-      BACKUP_KEY_ENV="$key" openssl enc -d -aes-256-cbc -pbkdf2 \
-        -in "$source_backup" -out "$temp_plaintext" -pass env:BACKUP_KEY_ENV
+      BACKUP_KEY_ENV="$key" openssl enc -d -aes-256-cbc -pbkdf2 -in "$file" -out "$temp_plaintext" -pass env:BACKUP_KEY_ENV
       ;;
   esac
-  local workfile="${temp_plaintext:-$source_backup}"
-  log "Restoring into isolated target database (destructive)..."
-  local client_image="${RESTORE_CLIENT_IMAGE:-postgres:17-alpine}"
-  local identity
-  identity=$(docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" \
-    psql -h "$RESTORE_TARGET_HOST" -p "$RESTORE_TARGET_PORT" -U "$target_user" -d "$target_db" -Atqc \
-    "SELECT inet_server_port() || chr(124) || current_database() || chr(124) || COALESCE((SELECT marker FROM heartbeat_restore_target_marker LIMIT 1), '');")
-  if [ "$identity" != "5432|${target_db}|heartbeat-vault-isolated-v1" ]; then
-    err "Isolated restore target identity check failed (${identity})."
-    exit 1
-  fi
-  if ! {
-    : <<'DISABLED_SQL'
-    printf 'DO $restore$ BEGIN IF current_database() <> :'\''expected_database'\'' THEN RAISE EXCEPTION '\''restore target database mismatch'\''; END IF; END $restore$;\n'
-DISABLED_SQL
-    gunzip -c "$workfile"
-  } | docker run --rm --network host -i -e "PGPASSWORD=$target_password" "$client_image" \
-    psql -h "$RESTORE_TARGET_HOST" -p "$RESTORE_TARGET_PORT" -U "$target_user" -d "$target_db" \
-    -v ON_ERROR_STOP=1 -f -; then
-    cleanup_restore
-    trap - EXIT INT TERM
-    err "Restore failed."
-    exit 1
+  local workfile="${temp_plaintext:-$file}"
+  if [ "$RESTORE_MODE" = "live" ]; then
+    local confirmation='' compose_args=(-f docker-compose.yml)
+    printf '[install] DESTRUCTIVE LIVE RESTORE: this overwrites Compose service db database %s. Type the database name to continue: ' "$PG_DB" >&2
+    IFS= read -r confirmation || true
+    [ "$confirmation" = "$PG_DB" ] || { err "Live restore confirmation did not match the database name; refusing."; exit 2; }
+    [ "$PROD" = 1 ] && compose_args+=(-f docker-compose.prod.yml)
+    if ! gunzip -c "$workfile" | env -u COMPOSE_FILE -u COMPOSE_PROJECT_NAME docker compose "${compose_args[@]}" \
+      exec -T db psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -f -; then
+      err "Live restore failed."
+      exit 1
+    fi
+  else
+    local target_user="drill_$(openssl rand -hex 8)" target_db="drill_$(openssl rand -hex 8)"
+    local target_password="$(openssl rand -hex 24)" drill_port='' attempt=0 identity='' landed=''
+    local marker="heartbeat-vault-drill-$(openssl rand -hex 16)" client_image='postgres:17-alpine'
+    drill_container="heartbeat-restore-drill-$(openssl rand -hex 8)"
+    log "Starting disposable PostgreSQL drill target."
+    docker run -d --name "$drill_container" -e "POSTGRES_USER=$target_user" -e "POSTGRES_DB=$target_db" \
+      -e "POSTGRES_PASSWORD=$target_password" -p 127.0.0.1::5432 "$client_image" >/dev/null
+    drill_port=$(docker port "$drill_container" 5432/tcp | awk -F: 'NF {print $NF; exit}')
+    [ -n "$drill_port" ] || { err "Unable to determine the drill target port."; exit 1; }
+    while [ "$attempt" -lt 60 ]; do
+      if docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+        -U "$target_user" -d "$target_db" -Atqc 'SELECT 1' >/dev/null 2>&1; then break; fi
+      attempt=$((attempt + 1)); sleep 1
+    done
+    [ "$attempt" -lt 60 ] || { err "Disposable drill target did not become ready."; exit 1; }
+    docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+      -U "$target_user" -d "$target_db" -v ON_ERROR_STOP=1 -c "CREATE TABLE heartbeat_restore_target_marker (marker text PRIMARY KEY); INSERT INTO heartbeat_restore_target_marker VALUES ('$marker');" >/dev/null
+    identity=$(docker inspect -f '{{.Name}}' "$drill_container")
+    [ "$identity" = "/${drill_container}" ] || { err "Drill target container identity check failed."; exit 1; }
+    identity=$(docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+      -U "$target_user" -d "$target_db" -Atqc "SELECT current_database() || chr(124) || marker FROM heartbeat_restore_target_marker WHERE marker = '$marker';")
+    [ "$identity" = "${target_db}|${marker}" ] || { err "Drill target marker identity check failed."; exit 1; }
+    log "Restoring into disposable drill target (destructive)."
+    if ! gunzip -c "$workfile" | docker run --rm --network host -i -e "PGPASSWORD=$target_password" "$client_image" \
+      psql -h 127.0.0.1 -p "$drill_port" -U "$target_user" -d "$target_db" -v ON_ERROR_STOP=1 -f -; then
+      err "Drill restore failed."
+      exit 1
+    fi
+    landed=$(docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+      -U "$target_user" -d "$target_db" -Atqc "SELECT COUNT(*) FROM heartbeat_restore_target_marker WHERE marker = '$marker';")
+    [ "$landed" = 1 ] || { err "Drill target verification failed after restore."; exit 1; }
   fi
   cleanup_restore
   trap - EXIT INT TERM
@@ -461,7 +450,7 @@ case "$SUBCOMMAND" in
     ;;
   status) cmd_status ;;
   backup) cmd_backup ;;
-  restore) cmd_restore "$RESTORE_FILE" ;;
+  restore) cmd_restore_modes "$RESTORE_FILE" ;;
   uninstall)
     cmd_uninstall
     ;;
@@ -471,3 +460,4 @@ case "$SUBCOMMAND" in
     exit 2
     ;;
 esac
+exit 0
