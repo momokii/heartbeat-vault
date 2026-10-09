@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Pool } from 'pg';
 import { randomBytes } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -12,6 +12,7 @@ import {
   encryptBackup,
   makePlainBackup,
   runInstaller,
+  runInstallerWithInput,
   TEST_KEY,
 } from './install-backup.test-support.js';
 const POSTGRES_IMAGE = 'postgres:17-alpine';
@@ -128,8 +129,40 @@ describe('installer backup and restore safety', () => {
         HV_DOCKER_LOG: join(root, 'docker.log'),
         HV_PSQL_INPUT: join(root, 'psql.sql'),
         HV_USE_REAL_DOCKER: '1',
+        DOCKER_HOST: 'tcp://127.0.0.1:1',
+        HV_KEEP_DRILL_TARGET: '1',
       });
       expect(result.status, result.stderr).toBe(0);
+      const connection = result.stderr.match(
+        /test-only drill target: container=(\S+) user=(\S+) database=(\S+)/,
+      );
+      const container = connection?.[1];
+      try {
+        expect(result.stderr).toContain('test-only');
+        expect(connection).not.toBeNull();
+        const user = connection?.[2];
+        const targetDatabase = connection?.[3];
+        if (container === undefined || user === undefined || targetDatabase === undefined) {
+          throw new Error('Expected kept drill target connection details');
+        }
+        const markerResult = await execFileAsync('docker', [
+          'exec',
+          container,
+          'psql',
+          '-U',
+          user,
+          '-d',
+          targetDatabase,
+          '-Atqc',
+          `SELECT value FROM restore_drill_marker WHERE value = '${marker}'`,
+        ]);
+        expect(markerResult.stdout.trim()).toBe(marker);
+      } finally {
+        if (container !== undefined) {
+          await execFileAsync('docker', ['rm', '-f', container]);
+          await expect(execFileAsync('docker', ['inspect', container])).rejects.toThrow();
+        }
+      }
       const liveMarker = await livePool.query(
         "SELECT to_regclass('public.restore_drill_marker') AS table_name",
       );
@@ -232,6 +265,110 @@ describe('installer backup and restore safety', () => {
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/type.*database name|confirmation/i);
     } finally {
+      await cleanupHarness(root);
+    }
+  });
+
+  it('restores the confirmed database in a disposable Compose project despite hostile Compose env', async () => {
+    const root = await createHarness(database);
+    const project = `heartbeat-live-restore-${randomBytes(6).toString('hex')}`;
+    const targetDatabase = `live_restore_${randomBytes(5).toString('hex')}`;
+    const targetUser = `live_${randomBytes(5).toString('hex')}`;
+    const targetPassword = randomBytes(18).toString('hex');
+    const composeFile = join(root, 'docker-compose.yml');
+    try {
+      await writeFile(
+        composeFile,
+        `name: ${project}\nservices:\n  db:\n    image: postgres:17-alpine\n    environment:\n      POSTGRES_DB: ${targetDatabase}\n      POSTGRES_USER: ${targetUser}\n      POSTGRES_PASSWORD: ${targetPassword}\n    ports:\n      - "127.0.0.1::5432"\n`,
+      );
+      await writeFile(
+        join(root, '.env'),
+        `POSTGRES_USER=${targetUser}\nPOSTGRES_DB=${targetDatabase}\nPOSTGRES_PASSWORD=${targetPassword}\n`,
+      );
+      await execFileAsync('docker', ['compose', '-p', project, '-f', composeFile, 'up', '-d'], {
+        cwd: root,
+      });
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        try {
+          await execFileAsync(
+            'docker',
+            [
+              'compose',
+              '-p',
+              project,
+              '-f',
+              composeFile,
+              'exec',
+              '-T',
+              'db',
+              'psql',
+              '-U',
+              targetUser,
+              '-d',
+              targetDatabase,
+              '-Atqc',
+              'SELECT 1',
+            ],
+            { cwd: root },
+          );
+          break;
+        } catch (error) {
+          if (attempt === 59) throw error;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+      const backup = await makePlainBackup(
+        root,
+        `DROP TABLE IF EXISTS live_restore_marker; CREATE TABLE live_restore_marker (value text PRIMARY KEY); INSERT INTO live_restore_marker VALUES ('live-${project}');`,
+      );
+      const result = await runInstallerWithInput(
+        root,
+        ['restore', '--live', backup, '--yes'],
+        `${targetDatabase}\n`,
+        {
+          COMPOSE_FILE: '/tmp/attacker-compose.yml',
+          COMPOSE_PROJECT_NAME: 'attacker',
+          DOCKER_HOST: 'tcp://127.0.0.1:1',
+          HV_USE_REAL_DOCKER: '1',
+        },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const portResult = await execFileAsync(
+        'docker',
+        ['compose', '-p', project, '-f', composeFile, 'port', 'db', '5432'],
+        { cwd: root },
+      );
+      const port = portResult.stdout.trim().split(':').at(-1);
+      if (port === undefined || port.length === 0) throw new Error('Expected disposable DB port');
+      const targetPool = new Pool({
+        host: '127.0.0.1',
+        port: Number(port),
+        database: targetDatabase,
+        user: targetUser,
+        password: targetPassword,
+      });
+      try {
+        const marker = await targetPool.query<{ value: string }>(
+          'SELECT value FROM live_restore_marker',
+        );
+        expect(marker.rows[0]?.value).toBe(`live-${project}`);
+      } finally {
+        await targetPool.end();
+      }
+    } finally {
+      await execFileAsync(
+        'docker',
+        ['compose', '-p', project, '-f', composeFile, 'down', '-v', '--remove-orphans'],
+        {
+          cwd: root,
+        },
+      ).catch(() => undefined);
+      const remaining = await execFileAsync(
+        'docker',
+        ['compose', '-p', project, '-f', composeFile, 'ps', '-q'],
+        { cwd: root },
+      ).catch(() => ({ stdout: '' }));
+      expect(remaining.stdout.trim()).toBe('');
       await cleanupHarness(root);
     }
   });

@@ -62,6 +62,10 @@ compose() {
   fi
 }
 
+docker_safe() {
+  env -u DOCKER_HOST -u DOCKER_CONTEXT -u COMPOSE_FILE -u COMPOSE_PROJECT_NAME docker "$@"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     install | status | backup | restore | uninstall | upgrade)
@@ -321,7 +325,7 @@ cmd_backup() {
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   file="backups/backup-${stamp}.sql.gz"
   encrypted="${file}.enc"
-  if ! docker compose exec -T db pg_dump -U "$PG_USER" "$PG_DB" | gzip > "$file"; then
+  if ! docker_safe compose exec -T db pg_dump -U "$PG_USER" "$PG_DB" | gzip > "$file"; then
     rm -f "$file"
     err "Backup failed."
     exit 1
@@ -353,8 +357,8 @@ cmd_restore_modes() {
   fi
   load_db_config
   cleanup_restore() {
-    [ -z "$temp_plaintext" ] || rm -f -- "$temp_plaintext"
-    [ -z "$drill_container" ] || docker rm -f "$drill_container" >/dev/null 2>&1 || true
+    [ -z "${temp_plaintext:-}" ] || rm -f -- "$temp_plaintext"
+    [ -z "${drill_container:-}" ] || docker_safe rm -f "$drill_container" >/dev/null 2>&1 || true
   }
   trap 'cleanup_restore; exit 143' INT TERM
   trap cleanup_restore EXIT
@@ -374,7 +378,7 @@ cmd_restore_modes() {
     IFS= read -r -t 60 confirmation || true
     [ "$confirmation" = "$PG_DB" ] || { err "Live restore confirmation did not match the database name; refusing."; exit 2; }
     [ "$PROD" = 1 ] && compose_args+=(-f docker-compose.prod.yml)
-    if ! gunzip -c "$workfile" | env -u COMPOSE_FILE -u COMPOSE_PROJECT_NAME docker compose "${compose_args[@]}" \
+    if ! gunzip -c "$workfile" | docker_safe compose "${compose_args[@]}" \
       exec -T db psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -f -; then
       err "Live restore failed."
       exit 1
@@ -385,34 +389,40 @@ cmd_restore_modes() {
     local marker="heartbeat-vault-drill-$(openssl rand -hex 16)" client_image='postgres:17-alpine'
     drill_container="heartbeat-restore-drill-$(openssl rand -hex 8)"
     log "Starting disposable PostgreSQL drill target."
-    docker run -d --name "$drill_container" -e "POSTGRES_USER=$target_user" -e "POSTGRES_DB=$target_db" \
+    docker_safe run -d --name "$drill_container" -e "POSTGRES_USER=$target_user" -e "POSTGRES_DB=$target_db" \
       -e "POSTGRES_PASSWORD=$target_password" -p 127.0.0.1::5432 "$client_image" >/dev/null
-    drill_port=$(docker port "$drill_container" 5432/tcp | awk -F: 'NF {print $NF; exit}')
+    drill_port=$(docker_safe port "$drill_container" 5432/tcp | awk -F: 'NF {print $NF; exit}')
     [ -n "$drill_port" ] || { err "Unable to determine the drill target port."; exit 1; }
     while [ "$attempt" -lt 60 ]; do
-      if docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+      if docker_safe run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
         -U "$target_user" -d "$target_db" -Atqc 'SELECT 1' >/dev/null 2>&1; then break; fi
       attempt=$((attempt + 1)); sleep 1
     done
     [ "$attempt" -lt 60 ] || { err "Disposable drill target did not become ready."; exit 1; }
-    docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+    docker_safe run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
       -U "$target_user" -d "$target_db" -v ON_ERROR_STOP=1 -c "CREATE TABLE heartbeat_restore_target_marker (marker text PRIMARY KEY); INSERT INTO heartbeat_restore_target_marker VALUES ('$marker');" >/dev/null
-    identity=$(docker inspect -f '{{.Name}}' "$drill_container")
+    identity=$(docker_safe inspect -f '{{.Name}}' "$drill_container")
     [ "$identity" = "/${drill_container}" ] || { err "Drill target container identity check failed."; exit 1; }
-    identity=$(docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+    identity=$(docker_safe run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
       -U "$target_user" -d "$target_db" -Atqc "SELECT current_database() || chr(124) || marker FROM heartbeat_restore_target_marker WHERE marker = '$marker';")
     [ "$identity" = "${target_db}|${marker}" ] || { err "Drill target marker identity check failed."; exit 1; }
     log "Restoring into disposable drill target (destructive)."
-    if ! gunzip -c "$workfile" | docker run --rm --network host -i -e "PGPASSWORD=$target_password" "$client_image" \
+    if ! gunzip -c "$workfile" | docker_safe run --rm --network host -i -e "PGPASSWORD=$target_password" "$client_image" \
       psql -h 127.0.0.1 -p "$drill_port" -U "$target_user" -d "$target_db" -v ON_ERROR_STOP=1 -f -; then
       err "Drill restore failed."
       exit 1
     fi
-    landed=$(docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
+    landed=$(docker_safe run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
       -U "$target_user" -d "$target_db" -Atqc "SELECT COUNT(*) FROM heartbeat_restore_target_marker WHERE marker = '$marker';")
     [ "$landed" = 1 ] || { err "Drill target verification failed after restore."; exit 1; }
   fi
-  cleanup_restore
+  # Test-only hook: keep the disposable target so integration tests can inspect it.
+  if [ "${HV_KEEP_DRILL_TARGET:-0}" = 1 ] && [ "$RESTORE_MODE" = "drill" ]; then
+    printf '[install] WARN: test-only drill target: container=%s user=%s database=%s\n' \
+      "$drill_container" "$target_user" "$target_db" >&2
+  else
+    cleanup_restore
+  fi
   trap - EXIT INT TERM
   log "Restore complete."
 }

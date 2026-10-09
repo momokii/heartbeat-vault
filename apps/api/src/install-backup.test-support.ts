@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -89,6 +89,38 @@ export async function runInstaller(
       status: typeof code === 'number' ? code : 1,
     };
   }
+}
+
+export async function runInstallerWithInput(
+  root: string,
+  args: readonly string[],
+  input: string,
+  extraEnv: Readonly<Record<string, string>> = {},
+): Promise<RunResult> {
+  const child = spawn(join(root, 'install.sh'), [...args], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PATH:
+        extraEnv['HV_USE_REAL_DOCKER'] === '1'
+          ? process.env['PATH']
+          : `${join(root, 'bin')}:${process.env['PATH']}`,
+      ...extraEnv,
+    },
+  });
+  const stdout: Buffer[] = [];
+  const stderr: Buffer[] = [];
+  child.stdout.on('data', chunk => stdout.push(Buffer.from(chunk)));
+  child.stderr.on('data', chunk => stderr.push(Buffer.from(chunk)));
+  child.stdin.end(input);
+  const status = await new Promise<number>(resolve =>
+    child.once('close', code => resolve(code ?? 1)),
+  );
+  return {
+    stdout: Buffer.concat(stdout).toString(),
+    stderr: Buffer.concat(stderr).toString(),
+    status,
+  };
 }
 
 export async function makePlainBackup(
