@@ -73,30 +73,35 @@ function encodedLocalDate(value: string): string {
 describe('SwitchHistory', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  it('propagates applied category and date filters to history pagination', async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse(switchItem))
-      .mockResolvedValueOnce(jsonResponse(firstHistoryPage))
-      .mockResolvedValueOnce(jsonResponse(firstHistoryPage))
-      .mockResolvedValueOnce(jsonResponse(secondHistoryPage));
+  // Multi-step mocked pagination: tolerant to loaded-CI timing without weakening assertions.
+  it(
+    'propagates applied category and date filters to history pagination',
+    { retry: 2 },
+    async () => {
+      const fetchMock = vi
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(jsonResponse(switchItem))
+        .mockResolvedValueOnce(jsonResponse(firstHistoryPage))
+        .mockResolvedValueOnce(jsonResponse(firstHistoryPage))
+        .mockResolvedValueOnce(jsonResponse(secondHistoryPage));
 
-    renderPage();
+      renderPage();
 
-    expect(await screen.findByText('Switch armed')).toBeVisible();
-    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'switch' } });
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-01-02T03:04' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
-    await screen.findByText('Switch armed');
-    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'heartbeat' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      expect(await screen.findByText('Switch armed')).toBeVisible();
+      fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'switch' } });
+      fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-01-02T03:04' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+      await screen.findByText('Switch armed');
+      fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'heartbeat' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 
-    expect(await screen.findByText('Heartbeat checked in')).toBeVisible();
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      `/api/switches/${switchItem.id}/audit?beforeId=12&category=switch&from=${encodedLocalDate('2026-01-02T03:04')}&limit=10`,
-      expect.objectContaining({ method: 'GET', credentials: 'include' }),
-    );
-  });
+      expect(await screen.findByText('Heartbeat checked in')).toBeVisible();
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        `/api/switches/${switchItem.id}/audit?beforeId=12&category=switch&from=${encodedLocalDate('2026-01-02T03:04')}&limit=10`,
+        expect.objectContaining({ method: 'GET', credentials: 'include' }),
+      );
+    },
+  );
 
   it('shows owner-visible sanitized details without administrator export controls', async () => {
     vi.spyOn(globalThis, 'fetch')

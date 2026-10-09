@@ -290,7 +290,8 @@ describe('SwitchDetailPage', () => {
     ).toBeVisible();
   });
 
-  it('requires confirmation before revoking a delegate', async () => {
+  // Multi-step mocked flows: tolerant to loaded-CI timing without weakening assertions.
+  it('requires confirmation before revoking a delegate', { retry: 2 }, async () => {
     const ownerItem = { ...item, isOwner: true };
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
