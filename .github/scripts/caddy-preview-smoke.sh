@@ -15,6 +15,7 @@ export APP_ENV=test
 export CADDY_BIND_IP=127.0.0.1
 export HTTP_PORT="$preview_http_port"
 export HTTPS_PORT="$preview_https_port"
+export CADDY_BASE_URL="http://127.0.0.1:${preview_http_port}"
 # CI-only test key: 64 hex chars decode to exactly 32 bytes, satisfying the
 # API's fail-closed MASTER_KEY check. Protects nothing real.
 export MASTER_KEY='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
