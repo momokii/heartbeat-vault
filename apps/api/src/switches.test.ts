@@ -669,6 +669,347 @@ describe('switches CRUD', () => {
   });
 });
 
+describe('pause-only switch delegates', () => {
+  it('owner can grant and revoke a registered delegate', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('delegate@example.com', 'password-12-chars');
+    const delegateId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
+    ).rows[0]!.id;
+    const granted = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+      payload: { delegateUserId: delegateId },
+    });
+    expect(granted.statusCode).toBe(201);
+    const delegationId = (JSON.parse(granted.body) as { id: string }).id;
+
+    const revoked = await app.inject({
+      method: 'DELETE',
+      url: `/api/switches/${switchId}/delegates/${delegateId}`,
+      headers: authCookie(ownerCookie),
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(
+      await pool.query(`SELECT 1 FROM switch_delegations WHERE id=$1`, [delegationId]),
+    ).toMatchObject({ rows: [] });
+  });
+
+  it('delegate can disarm but cannot access owner-only operations', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('delegate@example.com', 'password-12-chars');
+    const delegateId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
+    ).rows[0]!.id;
+    const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
+    const grant = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+      payload: { delegateUserId: delegateId },
+    });
+    expect(grant.statusCode).toBe(201);
+
+    await pool.query(`UPDATE switches SET status='active' WHERE id=$1`, [switchId]);
+    const disarm = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/disarm`,
+      headers: authCookie(delegateCookie),
+    });
+    expect(disarm.statusCode).toBe(200);
+
+    const denied = await Promise.all([
+      app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/payload`,
+        headers: authCookie(delegateCookie),
+        payload: { plaintext: 'must stay private' },
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/recipients`,
+        headers: authCookie(delegateCookie),
+        payload: { channel: 'email', address: 'leak@example.com' },
+      }),
+      app.inject({
+        method: 'PATCH',
+        url: `/api/switches/${switchId}`,
+        headers: authCookie(delegateCookie),
+        payload: { title: 'changed' },
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/check-in`,
+        headers: authCookie(delegateCookie),
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/trigger`,
+        headers: authCookie(delegateCookie),
+        payload: { type: 'panic', confirm: true },
+      }),
+    ]);
+    expect(denied.map(response => response.statusCode)).toEqual([404, 404, 404, 404, 404]);
+
+    const audit = await pool.query<{ actor_id: string; action: string; details: unknown }>(
+      `SELECT actor_id, action, details FROM audit_log
+       WHERE target=$1 AND action IN ('delegate_granted','switch_disarmed') ORDER BY id`,
+      [switchId],
+    );
+    expect(audit.rows.map(row => row.action)).toEqual(['delegate_granted', 'switch_disarmed']);
+    expect(audit.rows[1]?.actor_id).toBe(delegateId);
+    expect(audit.rows[1]?.details).toMatchObject({ delegationId: expect.any(String) });
+  });
+
+  it('delegate can cancel a pending trigger and the audit identifies the delegation', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await pool.query(
+      `UPDATE switches SET status='active', trigger_type='panic', fire_at=clock_timestamp(),
+          heartbeat_started_at=clock_timestamp(), next_deadline=clock_timestamp() + interval '1 day'
+       WHERE id=$1`,
+      [switchId],
+    );
+    await createUser('delegate@example.com', 'password-12-chars');
+    const delegateId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
+    ).rows[0]!.id;
+    const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/switches/${switchId}/delegates`,
+          headers: authCookie(ownerCookie),
+          payload: { delegateUserId: delegateId },
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const cancelled = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/cancel`,
+      headers: authCookie(delegateCookie),
+      payload: {},
+    });
+    expect(cancelled.statusCode).toBe(200);
+    const audit = await pool.query<{ actor_id: string; details: unknown }>(
+      `SELECT actor_id, details FROM audit_log WHERE action='trigger_cancelled' AND target=$1`,
+      [switchId],
+    );
+    expect(audit.rows[0]?.actor_id).toBe(delegateId);
+    expect(audit.rows[0]?.details).toMatchObject({ delegationId: expect.any(String) });
+  });
+
+  it('revocation stops access and unrelated users receive a 404', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('delegate@example.com', 'password-12-chars');
+    await createUser('other@example.com', 'password-12-chars');
+    const delegateId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
+    ).rows[0]!.id;
+    const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
+    const otherCookie = await loginAs('other@example.com', 'password-12-chars');
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/switches/${switchId}/delegates`,
+          headers: authCookie(ownerCookie),
+          payload: { delegateUserId: delegateId },
+        })
+      ).statusCode,
+    ).toBe(201);
+    expect(
+      (
+        await app.inject({
+          method: 'DELETE',
+          url: `/api/switches/${switchId}/delegates/${delegateId}`,
+          headers: authCookie(ownerCookie),
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    for (const cookie of [delegateCookie, otherCookie]) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/disarm`,
+        headers: authCookie(cookie),
+      });
+      expect(response.statusCode).toBe(404);
+      expect(JSON.parse(response.body)).toEqual({ error: 'not_found' });
+    }
+  });
+
+  it('only the owner can grant or revoke, and duplicate grants return a conflict', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('delegate@example.com', 'password-12-chars');
+    await createUser('other@example.com', 'password-12-chars');
+    const delegateId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
+    ).rows[0]!.id;
+    const otherId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='other@example.com'`)
+    ).rows[0]!.id;
+    const otherCookie = await loginAs('other@example.com', 'password-12-chars');
+    const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
+
+    const ownerGrant = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+      payload: { delegateUserId: delegateId },
+    });
+    expect(ownerGrant.statusCode).toBe(201);
+
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(ownerCookie),
+      payload: { delegateUserId: delegateId },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(JSON.parse(duplicate.body)).toEqual({ error: 'already_delegated' });
+
+    const otherGrant = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(otherCookie),
+      payload: { delegateUserId: delegateId },
+    });
+    expect(otherGrant.statusCode).toBe(404);
+    expect(JSON.parse(otherGrant.body)).toEqual({ error: 'not_found' });
+
+    const delegateGrant = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/delegates`,
+      headers: authCookie(delegateCookie),
+      payload: { delegateUserId: otherId },
+    });
+    expect(delegateGrant.statusCode).toBe(404);
+    expect(JSON.parse(delegateGrant.body)).toEqual({ error: 'not_found' });
+
+    const otherRevoke = await app.inject({
+      method: 'DELETE',
+      url: `/api/switches/${switchId}/delegates/${delegateId}`,
+      headers: authCookie(otherCookie),
+    });
+    expect(otherRevoke.statusCode).toBe(404);
+    expect(JSON.parse(otherRevoke.body)).toEqual({ error: 'not_found' });
+  });
+
+  it('delegate cannot read or mutate any owner-only switch surface', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('delegate@example.com', 'password-12-chars');
+    const delegateId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
+    ).rows[0]!.id;
+    const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/switches/${switchId}/delegates`,
+          headers: authCookie(ownerCookie),
+          payload: { delegateUserId: delegateId },
+        })
+      ).statusCode,
+    ).toBe(201);
+
+    const denied = await Promise.all([
+      app.inject({
+        method: 'GET',
+        url: `/api/switches/${switchId}`,
+        headers: authCookie(delegateCookie),
+      }),
+      app.inject({
+        method: 'GET',
+        url: `/api/switches/${switchId}/audit`,
+        headers: authCookie(delegateCookie),
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/duplicate`,
+        headers: authCookie(delegateCookie),
+        payload: { title: 'leak' },
+      }),
+      app.inject({ method: 'GET', url: '/api/switches', headers: authCookie(delegateCookie) }),
+      app.inject({
+        method: 'GET',
+        url: `/api/switches/${switchId}/recipients`,
+        headers: authCookie(delegateCookie),
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/payload`,
+        headers: authCookie(delegateCookie),
+        payload: { plaintext: 'must stay private' },
+      }),
+      app.inject({
+        method: 'PATCH',
+        url: `/api/switches/${switchId}`,
+        headers: authCookie(delegateCookie),
+        payload: { title: 'changed' },
+      }),
+      app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/check-in`,
+        headers: authCookie(delegateCookie),
+      }),
+    ]);
+    expect(denied.slice(0, 3).map(response => response.statusCode)).toEqual([404, 404, 404]);
+    expect(denied.slice(3).map(response => response.statusCode)).toEqual([200, 404, 404, 404, 404]);
+  });
+
+  it('delegate cannot cancel a released switch or alter its jobs', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    await createUser('delegate@example.com', 'password-12-chars');
+    const delegateId = (
+      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
+    ).rows[0]!.id;
+    const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: `/api/switches/${switchId}/delegates`,
+          headers: authCookie(ownerCookie),
+          payload: { delegateUserId: delegateId },
+        })
+      ).statusCode,
+    ).toBe(201);
+    await pool.query(`UPDATE switches SET status='released' WHERE id=$1`, [switchId]);
+    await pool.query(
+      `INSERT INTO trigger_jobs (switch_id, deadline_at, state, idempotency_key)
+       VALUES ($1, clock_timestamp(), 'succeeded', 'released-delegate-job')`,
+      [switchId],
+    );
+    await pool.query(
+      `INSERT INTO delivery_jobs (switch_id, channel, available_at, state, idempotency_key)
+       VALUES ($1, 'email', clock_timestamp(), 'pending', 'released-delegate-delivery')`,
+      [switchId],
+    );
+
+    const cancel = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/cancel`,
+      headers: authCookie(delegateCookie),
+      payload: {},
+    });
+    expect(cancel.statusCode).toBe(409);
+    expect(JSON.parse(cancel.body)).toEqual({ error: 'cancel_blocked', reason: 'released' });
+    const state = await pool.query<{ status: string }>(`SELECT status FROM switches WHERE id=$1`, [
+      switchId,
+    ]);
+    const jobs = await pool.query<{ state: string }>(
+      `SELECT state FROM delivery_jobs WHERE switch_id=$1`,
+      [switchId],
+    );
+    expect(state.rows[0]!.status).toBe('released');
+    expect(jobs.rows[0]!.state).toBe('pending');
+  });
+});
+
 describe('arming guards', () => {
   it('arm blocked with no accepted recipient (invited only)', async () => {
     const ownerId = await createUser('a1@example.com', 'password-12-chars');

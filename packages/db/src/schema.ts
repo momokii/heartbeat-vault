@@ -91,6 +91,26 @@ export const switches = pgTable(
   ],
 );
 
+export const switchDelegations = pgTable(
+  'switch_delegations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    switchId: uuid('switch_id')
+      .notNull()
+      .references(() => switches.id, { onDelete: 'cascade' }),
+    delegateUserId: uuid('delegate_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+  },
+  t => [unique('switch_delegations_switch_delegate_unique').on(t.switchId, t.delegateUserId)],
+);
+
 // ── recipients ───────────────────────────────────────────────────────────
 export const recipients = pgTable(
   'recipients',

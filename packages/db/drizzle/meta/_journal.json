@@ -85,6 +85,13 @@
       "when": 1790812800000,
       "tag": "0011_reminder_retry",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790899200000,
+      "tag": "0012_switch_delegations",
+      "breakpoints": true
     }
   ]
 }

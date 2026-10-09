@@ -21,6 +21,7 @@ import { writeAudit } from '../lib/audit.js';
 import { createAuthPreHandler } from '../lib/auth-middleware.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { decryptTotpSecret, verifyTotpCode } from '../lib/totp-store.js';
+import { loadSwitchForPause } from './switches.js';
 
 const uuidSchema = z.string().uuid();
 
@@ -201,8 +202,14 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
     const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
     if (!id.success) return reply.status(404).send({ error: 'not_found' });
     const user = request.user!;
-    const sw = await loadSwitchForOwner(pool, id.data, user.id, user.role === 'admin');
+    const sw = await loadSwitchForPause(pool, id.data, user.id, user.role === 'admin');
     if (!sw) return reply.status(404).send({ error: 'not_found' });
+    if (sw.status === 'released') {
+      return reply.status(409).send({ error: 'cancel_blocked', reason: 'released' });
+    }
+    if (sw.status !== 'active' || sw.trigger_type === null || sw.trigger_type === undefined) {
+      return reply.status(409).send({ error: 'cancel_blocked', reason: 'not_pending' });
+    }
 
     const parsed = z
       .object({ totpCode: z.string().min(6).max(8).optional() })
@@ -261,6 +268,16 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
           user.id,
         ]);
       }
+      const paused = await client.query(
+        `UPDATE switches SET status='paused', next_deadline=NULL, fire_at=NULL,
+            updated_at=clock_timestamp()
+         WHERE id=$1 AND status='active' AND trigger_type IS NOT NULL`,
+        [id.data],
+      );
+      if (paused.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return reply.status(409).send({ error: 'cancel_blocked', reason: 'not_pending' });
+      }
       await client.query(
         `UPDATE trigger_jobs SET state='cancelled'
          WHERE switch_id=$1 AND state IN ('pending','running')`,
@@ -271,18 +288,16 @@ export async function registerTriggerRoutes(app: FastifyInstance, pool: Pool): P
          WHERE switch_id=$1 AND state='pending' AND available_at > clock_timestamp()`,
         [id.data],
       );
-      await client.query(
-        `UPDATE switches SET status='paused', next_deadline=NULL, fire_at=NULL,
-            updated_at=clock_timestamp() WHERE id=$1`,
-        [id.data],
-      );
       await writeAudit(client, {
         actorId: user.id,
         action: 'trigger_cancelled',
         target: id.data,
         ip: request.ip,
         requestId: request.id,
-        details: { cancellation: 'pre_fire' },
+        details: {
+          cancellation: 'pre_fire',
+          ...(sw.delegation_id === null ? {} : { delegationId: sw.delegation_id }),
+        },
       });
       await client.query('COMMIT');
     } catch (err) {

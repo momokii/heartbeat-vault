@@ -66,6 +66,8 @@ type SwitchRow = {
   next_deadline: Date | null;
   created_at: Date;
   updated_at: Date;
+  trigger_type?: string | null;
+  fire_at?: Date | null;
   owner_email?: string | null;
 };
 
@@ -126,6 +128,27 @@ export async function loadSwitch(
   if (!row) return null;
   if (!isAdmin && row.owner_id !== userId) return null;
   return row;
+}
+
+export type PauseAuthorizedSwitch = SwitchRow & { readonly delegation_id: string | null };
+
+export async function loadSwitchForPause(
+  pool: Pool,
+  id: string,
+  userId: string,
+  isAdmin: boolean,
+): Promise<PauseAuthorizedSwitch | null> {
+  const res = await pool.query<PauseAuthorizedSwitch>(
+    `SELECT s.id, s.owner_id, s.title, s.mode, s.status, s.heartbeat_interval::text,
+            s.grace_window::text, s.dry_run, s.release_policy, s.heartbeat_started_at,
+            s.next_deadline, s.created_at, s.updated_at, s.trigger_type, s.fire_at,
+            d.id AS delegation_id
+     FROM switches s
+     LEFT JOIN switch_delegations d ON d.switch_id=s.id AND d.delegate_user_id=$2
+     WHERE s.id=$1 AND ($3 OR s.owner_id=$2 OR d.id IS NOT NULL)`,
+    [id, userId, isAdmin],
+  );
+  return res.rows[0] ?? null;
 }
 
 export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
@@ -294,6 +317,105 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
       .status(200)
       .send(res.rows.map(row => serializeSwitch(row, all && user.role === 'admin')));
   });
+
+  app.post('/api/switches/:id/delegates', { preHandler: requireAuth }, async (request, reply) => {
+    const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
+    if (!id.success) return reply.status(404).send({ error: 'not_found' });
+    const parsed = z.object({ delegateUserId: uuidSchema }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
+    const user = request.user!;
+    const row = await loadSwitch(pool, id.data, user.id, false);
+    if (!row || row.owner_id !== user.id || parsed.data.delegateUserId === user.id) {
+      return reply.status(404).send({ error: 'not_found' });
+    }
+    const target = await pool.query<{ id: string }>('SELECT id FROM users WHERE id=$1', [
+      parsed.data.delegateUserId,
+    ]);
+    if (!target.rows[0]) return reply.status(404).send({ error: 'not_found' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<{ id: string; created_at: Date }>(
+        `INSERT INTO switch_delegations (switch_id, delegate_user_id, created_by)
+         VALUES ($1,$2,$3) RETURNING id, created_at`,
+        [id.data, parsed.data.delegateUserId, user.id],
+      );
+      const delegation = inserted.rows[0];
+      if (!delegation) throw new Error('delegation insert returned no row');
+      await writeAudit(client, {
+        actorId: user.id,
+        action: 'delegate_granted',
+        target: id.data,
+        ip: request.ip,
+        requestId: request.id,
+        details: { delegationId: delegation.id, delegateUserId: parsed.data.delegateUserId },
+      });
+      await client.query('COMMIT');
+      return reply.status(201).send({
+        id: delegation.id,
+        switchId: id.data,
+        delegateUserId: parsed.data.delegateUserId,
+        createdAt: delegation.created_at.toISOString(),
+      });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        Reflect.get(err, 'code') === '23505' &&
+        Reflect.get(err, 'constraint') === 'switch_delegations_switch_delegate_unique'
+      ) {
+        return reply.status(409).send({ error: 'already_delegated' });
+      }
+      request.log.error(err);
+      return reply.status(500).send({ error: 'internal_error' });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete(
+    '/api/switches/:id/delegates/:delegateId',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const params = request.params as Record<string, string>;
+      const id = uuidSchema.safeParse(params['id']);
+      const delegateId = uuidSchema.safeParse(params['delegateId']);
+      if (!id.success || !delegateId.success) return reply.status(404).send({ error: 'not_found' });
+      const user = request.user!;
+      const row = await loadSwitch(pool, id.data, user.id, false);
+      if (!row || row.owner_id !== user.id) return reply.status(404).send({ error: 'not_found' });
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const deleted = await client.query<{ id: string }>(
+          `DELETE FROM switch_delegations WHERE switch_id=$1 AND delegate_user_id=$2 RETURNING id`,
+          [id.data, delegateId.data],
+        );
+        const delegation = deleted.rows[0];
+        if (!delegation) {
+          await client.query('ROLLBACK');
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        await writeAudit(client, {
+          actorId: user.id,
+          action: 'delegate_revoked',
+          target: id.data,
+          ip: request.ip,
+          requestId: request.id,
+          details: { delegationId: delegation.id, delegateUserId: delegateId.data },
+        });
+        await client.query('COMMIT');
+        return reply.status(200).send({ ok: true });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        request.log.error(err);
+        return reply.status(500).send({ error: 'internal_error' });
+      } finally {
+        client.release();
+      }
+    },
+  );
 
   app.get('/api/switches/:id', { preHandler: requireAuth }, async (request, reply) => {
     const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
@@ -483,7 +605,7 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
     const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
     if (!id.success) return reply.status(404).send({ error: 'not_found' });
     const user = request.user!;
-    const row = await loadSwitch(pool, id.data, user.id, user.role === 'admin');
+    const row = await loadSwitchForPause(pool, id.data, user.id, user.role === 'admin');
     if (!row) return reply.status(404).send({ error: 'not_found' });
     const client = await pool.connect();
     try {
@@ -499,7 +621,11 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
         target: id.data,
         ip: request.ip,
         requestId: request.id,
-        details: { fromStatus: row.status, toStatus: 'paused' },
+        details: {
+          fromStatus: row.status,
+          toStatus: 'paused',
+          ...(row.delegation_id === null ? {} : { delegationId: row.delegation_id }),
+        },
       });
       await client.query('COMMIT');
     } catch (err) {

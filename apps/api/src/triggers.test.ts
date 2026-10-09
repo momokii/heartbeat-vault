@@ -294,7 +294,7 @@ describe('quorum trigger', () => {
 });
 
 describe('cancellation', () => {
-  it('cancel aborts queued deliveries, pending jobs, and disarms', async () => {
+  it('rejects cancellation after release without mutating jobs or switch state', async () => {
     const { userId, cookie } = await createUserAndLogin('c@example.com');
     const sid = await createActiveSwitch(userId);
     await addAcceptedRecipient(sid);
@@ -309,15 +309,64 @@ describe('cancellation', () => {
       url: `/api/switches/${sid}/cancel`,
       headers: authCookie(cookie),
     });
-    expect(cancel.statusCode).toBe(200);
+    expect(cancel.statusCode).toBe(409);
+    expect(JSON.parse(cancel.body)).toEqual({ error: 'cancel_blocked', reason: 'released' });
     const dj = await pool.query<{ state: string }>(`SELECT state FROM delivery_jobs`);
-    expect(dj.rows.every(r => r.state === 'cancelled')).toBe(true);
+    expect(dj.rows.every(r => r.state === 'pending')).toBe(true);
     const tj = await pool.query<{ state: string }>(`SELECT state FROM trigger_jobs`);
-    expect(tj.rows.every(r => r.state === 'succeeded' || r.state === 'cancelled')).toBe(true);
+    expect(tj.rows.every(r => r.state === 'succeeded')).toBe(true);
     const sw = await pool.query<{ status: string }>(`SELECT status FROM switches WHERE id=$1`, [
       sid,
     ]);
-    expect(sw.rows[0]!.status).toBe('paused');
+    expect(sw.rows[0]!.status).toBe('released');
+  });
+
+  it('owner cancels an active switch with a pending trigger before it fires', async () => {
+    const { userId, cookie } = await createUserAndLogin('pending-cancel@example.com');
+    const sid = await createActiveSwitch(userId);
+    await addAcceptedRecipient(sid);
+    expect((await setTriggerViaApi(cookie, sid, { type: 'panic', confirm: true })).status).toBe(
+      200,
+    );
+
+    const pending = await pool.query<{ status: string; trigger_type: string }>(
+      `SELECT status, trigger_type FROM switches WHERE id=$1`,
+      [sid],
+    );
+    expect(pending.rows[0]).toMatchObject({ status: 'active', trigger_type: 'panic' });
+
+    const cancel = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${sid}/cancel`,
+      headers: authCookie(cookie),
+      payload: {},
+    });
+    expect(cancel.statusCode).toBe(200);
+    expect(JSON.parse(cancel.body)).toMatchObject({ ok: true, status: 'paused' });
+    const sw = await pool.query<{ status: string; fire_at: Date | null }>(
+      `SELECT status, fire_at FROM switches WHERE id=$1`,
+      [sid],
+    );
+    expect(sw.rows[0]).toMatchObject({ status: 'paused', fire_at: null });
+  });
+
+  it('owner cancellation of a released switch is denied on the shared path', async () => {
+    const { userId, cookie } = await createUserAndLogin('released-owner@example.com');
+    const sid = await createActiveSwitch(userId);
+    await pool.query(`UPDATE switches SET status='released' WHERE id=$1`, [sid]);
+
+    const cancel = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${sid}/cancel`,
+      headers: authCookie(cookie),
+      payload: {},
+    });
+    expect(cancel.statusCode).toBe(409);
+    expect(JSON.parse(cancel.body)).toEqual({ error: 'cancel_blocked', reason: 'released' });
+    const sw = await pool.query<{ status: string }>(`SELECT status FROM switches WHERE id=$1`, [
+      sid,
+    ]);
+    expect(sw.rows[0]!.status).toBe('released');
   });
 
   it('non-owner cannot cancel (404 shape)', async () => {
