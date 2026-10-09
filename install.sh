@@ -24,7 +24,7 @@
 #     'le' and 'byo' print the exact manual steps (Caddyfile is static in v1).
 #   - The script only touches Docker resources and this project directory.
 # ─────────────────────────────────────────────────────────────────────────────
-set -u
+set -euo pipefail
 
 cd "$(dirname "$0")" || exit 2
 
@@ -300,28 +300,33 @@ cmd_status() {
 
 cmd_backup() {
   load_db_config
-  mkdir -p backups
-  local stamp file
-  stamp=$(date -u +%Y%m%dT%H%M%SZ)
-  file="backups/backup-${stamp}.sql.gz"
-  if ! docker compose exec -T db pg_dump -U "$PG_USER" "$PG_DB" | gzip > "$file"; then
-    err "Backup failed."
-    exit 1
-  fi
   local key
   key=$(env_value BACKUP_ENCRYPTION_KEY || true)
   case "$key" in
     '' | change-me*)
-      warn "BACKUP_ENCRYPTION_KEY not set — backup stored UNENCRYPTED. Set the key to encrypt future backups."
-      ;;
-    *)
-      BACKUP_KEY_ENV="$key" openssl enc -aes-256-cbc -pbkdf2 -salt \
-        -in "$file" -out "${file}.enc" -pass env:BACKUP_KEY_ENV &&
-        rm -f "$file" && file="${file}.enc"
-      log "Backup encrypted."
+      err "BACKUP_ENCRYPTION_KEY is required for backups; refusing to create an unencrypted backup."
+      exit 1
       ;;
   esac
-  log "Backup written: $file ($(du -h "$file" 2>/dev/null | cut -f1))"
+  mkdir -p backups
+  local stamp file encrypted
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  file="backups/backup-${stamp}.sql.gz"
+  encrypted="${file}.enc"
+  if ! docker compose exec -T db pg_dump -U "$PG_USER" "$PG_DB" | gzip > "$file"; then
+    rm -f "$file"
+    err "Backup failed."
+    exit 1
+  fi
+  if ! BACKUP_KEY_ENV="$key" openssl enc -aes-256-cbc -pbkdf2 -salt \
+    -in "$file" -out "$encrypted" -pass env:BACKUP_KEY_ENV; then
+    rm -f "$file" "$encrypted"
+    err "Backup encryption failed."
+    exit 1
+  fi
+  rm -f "$file"
+  log "Backup encrypted."
+  log "Backup written: $encrypted ($(du -h "$encrypted" 2>/dev/null | cut -f1))"
 }
 
 cmd_restore() {
@@ -335,7 +340,13 @@ cmd_restore() {
     exit 2
   fi
   load_db_config
-  local workfile="$file"
+  local workfile=''
+  cleanup_restore() {
+    [ -z "$workfile" ] || rm -f -- "$workfile"
+  }
+  trap 'cleanup_restore; exit 143' INT TERM
+  trap cleanup_restore EXIT
+  workfile="$file"
   case "$file" in
     *.enc)
       local key
@@ -350,7 +361,18 @@ cmd_restore() {
       ;;
   esac
   log "Restoring $workfile into $PG_DB (destructive)..."
-  gunzip -c "$workfile" | docker compose exec -T db psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1
+  if ! {
+    printf 'DO $restore$ BEGIN IF current_database() <> :'\''expected_database'\'' THEN RAISE EXCEPTION '\''restore target database mismatch'\''; END IF; END $restore$;\n'
+    gunzip -c "$workfile"
+  } | docker compose run --rm --no-deps db psql -h db -U "$PG_USER" -d "$PG_DB" \
+    -v ON_ERROR_STOP=1 -v expected_database="$PG_DB" -c 'SELECT current_database();' -f -; then
+    cleanup_restore
+    trap - EXIT INT TERM
+    err "Restore failed."
+    exit 1
+  fi
+  cleanup_restore
+  trap - EXIT INT TERM
   log "Restore complete."
 }
 
