@@ -371,7 +371,7 @@ cmd_restore_modes() {
   if [ "$RESTORE_MODE" = "live" ]; then
     local confirmation='' compose_args=(-f docker-compose.yml)
     printf '[install] DESTRUCTIVE LIVE RESTORE: this overwrites Compose service db database %s. Type the database name to continue: ' "$PG_DB" >&2
-    IFS= read -r confirmation || true
+    IFS= read -r -t 60 confirmation || true
     [ "$confirmation" = "$PG_DB" ] || { err "Live restore confirmation did not match the database name; refusing."; exit 2; }
     [ "$PROD" = 1 ] && compose_args+=(-f docker-compose.prod.yml)
     if ! gunzip -c "$workfile" | env -u COMPOSE_FILE -u COMPOSE_PROJECT_NAME docker compose "${compose_args[@]}" \
