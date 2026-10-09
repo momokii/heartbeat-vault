@@ -938,9 +938,6 @@ describe('pause-only switch delegates', () => {
   it('delegate cannot read or mutate any owner-only switch surface', async () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     await createUser('delegate@example.com', 'password-12-chars');
-    const delegateId = (
-      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
-    ).rows[0]!.id;
     const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
     expect(
       (
@@ -1001,9 +998,6 @@ describe('pause-only switch delegates', () => {
   it('delegate cannot cancel a released switch or alter its jobs', async () => {
     const { ownerCookie, switchId } = await scaffoldArmed();
     await createUser('delegate@example.com', 'password-12-chars');
-    const delegateId = (
-      await pool.query<{ id: string }>(`SELECT id FROM users WHERE email='delegate@example.com'`)
-    ).rows[0]!.id;
     const delegateCookie = await loginAs('delegate@example.com', 'password-12-chars');
     expect(
       (
