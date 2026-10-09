@@ -28,7 +28,7 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    email: text('email').notNull().unique(),
+    email: text('email').unique(),
     passwordHash: text('password_hash').notNull(),
     totpSecretEncrypted: bytea('totp_secret_encrypted'),
     webauthnUserId: bytea('webauthn_user_id'),
@@ -378,3 +378,30 @@ export const exportJobs = pgTable('export_jobs', {
   status: text('status').notNull(),
   errorCode: text('error_code'),
 });
+
+// ── reminder_jobs ────────────────────────────────────────────────────────
+export const reminderJobs = pgTable(
+  'reminder_jobs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    switchId: uuid('switch_id')
+      .notNull()
+      .references(() => switches.id, { onDelete: 'cascade' }),
+    ownerEmail: text('owner_email').notNull(),
+    deadlineAt: timestamp('deadline_at', { withTimezone: true }).notNull(),
+    stage: text('stage').notNull(),
+    channel: text('channel').notNull(),
+    state: text('state').notNull().default('pending'),
+    idempotencyKey: text('idempotency_key').notNull().unique(),
+    lastError: text('last_error'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`clock_timestamp()`),
+  },
+  t => [
+    check('reminder_jobs_stage_check', sql`${t.stage} IN ('warning','reminder')`),
+    check('reminder_jobs_channel_check', sql`${t.channel} IN ('email')`),
+    check('reminder_jobs_state_check', sql`${t.state} IN ('pending','sent','failed')`),
+  ],
+);
