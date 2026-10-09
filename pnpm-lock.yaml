@@ -279,6 +279,9 @@ importers:
 
   packages/e2e:
     dependencies:
+      '@heartbeat-vault/db':
+        specifier: workspace:*
+        version: link:../db
       pg:
         specifier: 8.23.1
         version: 8.23.1

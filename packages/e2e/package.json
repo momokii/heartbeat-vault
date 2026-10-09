@@ -24,6 +24,7 @@
     "typescript-eslint": "8.71.1"
   },
   "dependencies": {
+    "@heartbeat-vault/db": "workspace:*",
     "pg": "8.23.1"
   }
 }
