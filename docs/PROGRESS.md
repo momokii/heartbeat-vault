@@ -175,6 +175,12 @@
 
 ## Maintenance sweep — IN PROGRESS (dependencies, docs/state refresh, GHSA review)
 
+## Wave 2h: CI failure diagnosis — IN PROGRESS
+
+- [x] Live CI showed gate failing at the Typecheck step and release-please failing, while the tree was green locally. Reproduced in a pristine `node:22-bookworm` container: `@heartbeat-vault/e2e#typecheck` imports `../../db/dist/*` (built output) without declaring `@heartbeat-vault/db` as a dependency, so turbo's `^build` ordering never built it — a phantom dependency masked locally by a stale `dist/`. Fixed by declaring the workspace dependency; verified by deleting `dist/` and watching turbo rebuild it (`dist/migrate.js` present, typecheck 8/8).
+- [ ] Release-please still fails in CI after adding the missing checkout step and removing the redundant input; config validated locally via dry-run. Leading hypothesis: repository Actions token permissions restrict write access — requires the owner to check Settings → Actions → General → Workflow permissions.
+- [ ] Fresh CI observation pending on the fix commit.
+
 ## Key decisions
 
 - 2026-09-20 (user answers): deployment = single-household, one host, documented HA path; channels v1 = Email + Webhook + Telegram (Matrix/SFTP deferred); CI = GitHub Actions + GHCR; UI/docs = English only; license = permissive MIT/Apache-2.0 family (exact pick pending); threat priority = stolen-data-at-rest first (full STRIDE + ASVS map still required); release model = server-side automatic release for v1; hardened profile = NOT in v1 — standard-only v1, hardened (Vault vs OpenBao) deferred to next-development todo with ADRs.
