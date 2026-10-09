@@ -2,6 +2,9 @@ import { z } from 'zod';
 import type { Pool, PoolClient } from 'pg';
 import type { DeliveryChannel } from '../channels/types.js';
 import { writeAudit } from '../lib/audit.js';
+import { REMINDER_SEND_DEADLINE_MS, sanitizeReminderError, withReminderDeadline } from './index.js';
+
+export { REMINDER_SEND_DEADLINE_MS };
 
 const reminderRowSchema = z.object({
   id: z.string().uuid(),
@@ -68,17 +71,22 @@ export async function deliverPendingOwnerReminders(
 
       let result: ReminderEmailResult;
       try {
-        result = await sendEmail({
-          to: claimed.ownerEmail,
-          switchId: claimed.switchId,
-          subject: `Heartbeat Vault reminder (${claimed.stage})`,
-          text: `Reminder for switch ${claimed.switchId} at ${claimed.deadlineAt.toISOString()}`,
-          idempotencyKey: claimed.idempotencyKey,
-        });
+        result = await withReminderDeadline(
+          sendEmail({
+            to: claimed.ownerEmail,
+            switchId: claimed.switchId,
+            subject: `Heartbeat Vault reminder (${claimed.stage})`,
+            text: `Reminder for switch ${claimed.switchId} at ${claimed.deadlineAt.toISOString()}`,
+            idempotencyKey: claimed.idempotencyKey,
+          }),
+          { status: 'retry', error: 'reminder provider deadline exceeded' },
+        );
       } catch (error: unknown) {
         result = {
           status: 'retry',
-          error: error instanceof Error ? error.message : 'email provider failed',
+          error: sanitizeReminderError(
+            error instanceof Error ? error.message : 'email provider failed',
+          ),
         };
       }
       if (result.status === 'sent') {
@@ -156,6 +164,7 @@ async function markFailed(
   error: string,
   now: Date,
 ): Promise<void> {
+  const sanitizedError = sanitizeReminderError(error);
   await client.query(
     `UPDATE reminder_jobs
      SET attempts = attempts + 1,
@@ -167,11 +176,11 @@ async function markFailed(
          END,
          last_error = $2
      WHERE id = $1 AND state = 'pending'`,
-    [job.id, error, now],
+    [job.id, sanitizedError, now],
   );
   await writeAudit(client, {
     action: 'reminder_failed',
     target: job.idempotencyKey,
-    details: { error },
+    details: { error: sanitizedError },
   });
 }

@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   createReminderEmailSender: vi.fn(),
   createConfiguredChannelRegistry: vi.fn(),
   materializeOwnerReminder: vi.fn(),
+  sanitizeReminderError: (error: unknown) =>
+    error instanceof Error ? error.message : 'unknown error',
 }));
 
 vi.mock('./server.js', () => ({ buildServer: vi.fn() }));
@@ -39,6 +41,7 @@ vi.mock('./channels/registry.js', () => ({
 }));
 vi.mock('./reminders/index.js', () => ({
   materializeOwnerReminder: mocks.materializeOwnerReminder,
+  sanitizeReminderError: mocks.sanitizeReminderError,
 }));
 
 const FIXED_NOW = new Date('2026-10-01T00:00:00.000Z');
@@ -94,7 +97,7 @@ describe('scheduler owner reminders', () => {
     await pool.end();
   });
 
-  it('keeps release processing alive when the reminder provider fails', async () => {
+  it('keeps lease reaping and release processing alive when reminder delivery times out', async () => {
     const { runSchedulerCycle } = await import('./main.js');
     const pool = new Pool();
     const emailChannel = { send: vi.fn() };
@@ -124,7 +127,7 @@ describe('scheduler owner reminders', () => {
     mocks.claimJob.mockResolvedValueOnce(releaseJob).mockResolvedValueOnce(null);
     mocks.processJob.mockResolvedValue(undefined);
     mocks.createReminderEmailSender.mockReturnValue(vi.fn());
-    mocks.deliverPendingOwnerReminders.mockRejectedValue(new Error('smtp unavailable'));
+    mocks.deliverPendingOwnerReminders.mockResolvedValue({ sent: 0, failed: 1 });
     mocks.deliverPendingDeliveries.mockResolvedValue({ sent: 0, retried: 0, dead: 0 });
     mocks.materializeOwnerReminder.mockResolvedValue(undefined);
     vi.useFakeTimers();

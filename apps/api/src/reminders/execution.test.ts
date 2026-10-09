@@ -84,7 +84,7 @@ describe('owner reminder materialization', () => {
 });
 
 describe('owner reminder execution', () => {
-  it('does not resend a sent job on redelivery', async () => {
+  it('does not resend a completed job on redelivery', async () => {
     const { executeOwnerReminder, materializeOwnerReminder } = await loadReminderModule();
     await seedOwner('owner@example.test');
     const job = await materializeOwnerReminder(
@@ -211,7 +211,7 @@ describe('owner reminder delivery worker', () => {
     expect((await pool.query(`SELECT id FROM delivery_jobs`)).rows).toHaveLength(0);
   });
 
-  it('redelivery claims no sent job and invokes the provider once', async () => {
+  it('redelivery after a provider-accepted crash window sends again', async () => {
     const { deliverPendingOwnerReminders } = await import('./delivery.js');
     const { materializeOwnerReminder } = await import('./index.js');
     await seedOwner('owner@example.test');
@@ -228,9 +228,10 @@ describe('owner reminder delivery worker', () => {
     const send = vi.fn().mockResolvedValue({ status: 'sent', receipt: 'smtp-delivery-2' });
 
     await deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
+    await pool.query(`UPDATE reminder_jobs SET state = 'pending', sent_at = NULL`);
     await deliverPendingOwnerReminders(pool, send, 'worker-2', FIXED_NOW);
 
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it('records provider failure as retryable pending state with backoff', async () => {
@@ -247,7 +248,10 @@ describe('owner reminder delivery worker', () => {
       },
       FIXED_NOW,
     );
-    const send = vi.fn().mockResolvedValue({ status: 'retry', error: 'smtp unavailable' });
+    const send = vi.fn().mockResolvedValue({
+      status: 'retry',
+      error: `smtp\n${'x'.repeat(600)}`,
+    });
 
     const summary = await deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
 
@@ -263,7 +267,7 @@ describe('owner reminder delivery worker', () => {
     expect(retryState.rows[0]).toMatchObject({
       state: 'pending',
       attempts: 1,
-      last_error: 'smtp unavailable',
+      last_error: `smtp ${'x'.repeat(495)}`,
     });
     expect(retryState.rows[0]?.next_attempt_at.toISOString()).toBe('2026-10-01T00:01:00.000Z');
     const audit = await pool.query<{ readonly action: string }>(
@@ -271,6 +275,46 @@ describe('owner reminder delivery worker', () => {
       [job.idempotencyKey],
     );
     expect(audit.rows.map(row => row.action)).toContain('reminder_failed');
+    const auditDetails = await pool.query<{ readonly details: { readonly error: string } }>(
+      `SELECT details FROM audit_log WHERE target = $1 AND action = 'reminder_failed'`,
+      [job.idempotencyKey],
+    );
+    expect(auditDetails.rows[0]?.details.error).toBe(`smtp ${'x'.repeat(495)}`);
+  });
+
+  it('records a bounded failure when the provider never resolves', async () => {
+    const { deliverPendingOwnerReminders, REMINDER_SEND_DEADLINE_MS } =
+      await import('./delivery.js');
+    const { materializeOwnerReminder } = await import('./index.js');
+    await seedOwner('owner@example.test');
+    const job = await materializeOwnerReminder(
+      pool,
+      {
+        switchId: SWITCH_ID,
+        deadlineAt: FIXED_NOW.toISOString(),
+        stage: 'reminder',
+        channel: 'email',
+      },
+      FIXED_NOW,
+    );
+    const send = vi.fn().mockImplementation(() => new Promise(() => undefined));
+
+    vi.useFakeTimers();
+    const delivery = deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(REMINDER_SEND_DEADLINE_MS);
+    const summary = await delivery;
+    vi.useRealTimers();
+
+    expect(summary).toEqual({ sent: 0, failed: 1 });
+    const row = await pool.query<{ readonly state: string; readonly last_error: string }>(
+      `SELECT state, last_error FROM reminder_jobs WHERE id = $1`,
+      [job.id],
+    );
+    expect(row.rows[0]).toEqual({
+      state: 'pending',
+      last_error: 'reminder provider deadline exceeded',
+    });
   });
 
   it('retries due failures and makes the fifth failure terminal', async () => {

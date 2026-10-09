@@ -7,7 +7,7 @@ import { claimJob, failJob, processJob, reapExpiredLeases } from './lib/trigger-
 import { deliverPendingDeliveries } from './channels/dispatch.js';
 import { createConfiguredChannelRegistry } from './channels/registry.js';
 import type { ChannelRegistry } from './channels/types.js';
-import { materializeOwnerReminder } from './reminders/index.js';
+import { materializeOwnerReminder, sanitizeReminderError } from './reminders/index.js';
 import { createReminderEmailSender, deliverPendingOwnerReminders } from './reminders/delivery.js';
 
 function requiredEnvironment(name: string): string {
@@ -81,14 +81,12 @@ async function materializeDueOwnerReminders(pool: Pool, now: Date): Promise<void
         );
       } catch (error: unknown) {
         process.stderr.write(
-          `owner reminder materialization failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
+          `owner reminder materialization failed: ${sanitizeReminderError(error)}\n`,
         );
       }
     }
   } catch (error: unknown) {
-    process.stderr.write(
-      `owner reminder scan failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
-    );
+    process.stderr.write(`owner reminder scan failed: ${sanitizeReminderError(error)}\n`);
   }
 }
 
@@ -117,9 +115,7 @@ export async function runSchedulerCycle(
         now,
       );
     } catch (error: unknown) {
-      process.stderr.write(
-        `owner reminder delivery failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
-      );
+      process.stderr.write(`owner reminder delivery failed: ${sanitizeReminderError(error)}\n`);
     }
   }
   await reapExpiredLeases(pool, now);

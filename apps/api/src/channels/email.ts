@@ -11,7 +11,14 @@ export type EmailChannelConfig = {
     readonly user: string;
     readonly pass: string;
   };
+  readonly connectionTimeoutMs?: number;
+  readonly greetingTimeoutMs?: number;
+  readonly socketTimeoutMs?: number;
 };
+
+const EMAIL_CONNECTION_TIMEOUT_MS = 10_000;
+const EMAIL_GREETING_TIMEOUT_MS = 10_000;
+const EMAIL_SOCKET_TIMEOUT_MS = 30_000;
 
 export function emailMessageId(idempotencyKey: string): string {
   const digest = createHash('sha256').update(idempotencyKey).digest('hex');
@@ -24,12 +31,18 @@ export function createEmailChannel(config: EmailChannelConfig): DeliveryChannel 
         host: config.host,
         port: config.port,
         secure: config.secure,
+        connectionTimeout: config.connectionTimeoutMs ?? EMAIL_CONNECTION_TIMEOUT_MS,
+        greetingTimeout: config.greetingTimeoutMs ?? EMAIL_GREETING_TIMEOUT_MS,
+        socketTimeout: config.socketTimeoutMs ?? EMAIL_SOCKET_TIMEOUT_MS,
         auth: config.auth,
       })
     : nodemailer.createTransport({
         host: config.host,
         port: config.port,
         secure: config.secure,
+        connectionTimeout: config.connectionTimeoutMs ?? EMAIL_CONNECTION_TIMEOUT_MS,
+        greetingTimeout: config.greetingTimeoutMs ?? EMAIL_GREETING_TIMEOUT_MS,
+        socketTimeout: config.socketTimeoutMs ?? EMAIL_SOCKET_TIMEOUT_MS,
       });
 
   return {

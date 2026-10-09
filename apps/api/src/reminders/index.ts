@@ -2,6 +2,34 @@ import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 import { writeAudit } from '../lib/audit.js';
 
+export const REMINDER_SEND_DEADLINE_MS = 30_000;
+const REMINDER_SEND_TIMEOUT = Symbol('reminder-send-timeout');
+
+export function sanitizeReminderError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const printable = Array.from(message, character => {
+    const code = character.codePointAt(0) ?? 0;
+    return code <= 31 || (code >= 127 && code <= 159) ? ' ' : character;
+  }).join('');
+  return printable.replace(/\s+/g, ' ').trim().slice(0, 500);
+}
+
+export async function withReminderDeadline<T, U>(
+  operation: Promise<T>,
+  timeoutValue: U,
+): Promise<T | U> {
+  operation.catch(() => undefined);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise: Promise<U> = new Promise(resolve => {
+    timer = setTimeout(() => resolve(timeoutValue), REMINDER_SEND_DEADLINE_MS);
+  });
+  try {
+    return await Promise.race([operation, timeoutPromise]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 const reminderStages = ['warning', 'reminder'] as const;
 const reminderChannels = ['email'] as const;
 
@@ -139,11 +167,16 @@ export async function executeOwnerReminder(
       await client.query('COMMIT');
       return;
     }
-    await options.sendEmail({
-      to: job.ownerEmail,
-      subject: `Heartbeat Vault reminder (${job.stage})`,
-      text: `Reminder for switch ${job.switchId} at ${job.deadlineAt.toISOString()}`,
-    });
+    const sendResult = await withReminderDeadline(
+      options.sendEmail({
+        to: job.ownerEmail,
+        subject: `Heartbeat Vault reminder (${job.stage})`,
+        text: `Reminder for switch ${job.switchId} at ${job.deadlineAt.toISOString()}`,
+      }),
+      REMINDER_SEND_TIMEOUT,
+    );
+    if (sendResult === REMINDER_SEND_TIMEOUT)
+      throw new Error('reminder provider deadline exceeded');
     await client.query(
       `UPDATE reminder_jobs SET state = 'sent', sent_at = $2 WHERE id = $1 AND state <> 'sent'`,
       [job.id, options.now],
@@ -154,7 +187,10 @@ export async function executeOwnerReminder(
     try {
       await client.query(
         `UPDATE reminder_jobs SET state = 'failed', last_error = $2 WHERE id = $1`,
-        [job.id, error instanceof Error ? error.message : 'email send failed'],
+        [
+          job.id,
+          sanitizeReminderError(error instanceof Error ? error.message : 'email send failed'),
+        ],
       );
       await recordAudit(client, 'reminder_failed', job.idempotencyKey);
       await client.query('COMMIT');

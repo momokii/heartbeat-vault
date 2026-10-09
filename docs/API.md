@@ -122,4 +122,6 @@ single-switch responses omit `ownerEmail`.
 
 ## Integration notes
 
+Owner reminders use at-least-once delivery. A crash after the provider accepts an email but before the database marks the job sent can resend the reminder; deterministic SMTP Message-IDs are best-effort provider deduplication, not enforced idempotency. Duplicate reminders are harmless nudges.
+
 Use a dedicated application account and the normal invitation/login process rather than copying browser cookies into automation. Never send a payload through a query string or logs. For webhook/Telegram/email delivery behavior and risk guidance, read [DELIVERY_CHANNELS.md](DELIVERY_CHANNELS.md). For full test-backed examples, inspect the API route tests and the Playwright journey in `apps/e2e`.
