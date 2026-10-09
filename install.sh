@@ -399,6 +399,20 @@ cmd_restore_modes() {
       attempt=$((attempt + 1)); sleep 1
     done
     [ "$attempt" -lt 60 ] || { err "Disposable drill target did not become ready."; exit 1; }
+    log "Recreating dump-referenced roles in the drill target."
+    local drill_roles='' drill_role=''
+    drill_roles=$(gunzip -c "$workfile" \
+      | grep -Eo '(OWNER TO|FOR ROLE|GRANT [^;]* TO) [A-Za-z_][A-Za-z0-9_$, ]*;' \
+      | sed -E 's/.*(OWNER TO|FOR ROLE) //; s/^GRANT .* TO //; s/;$//' \
+      | tr ',' '\n' | tr -d ' ' | sort -u || true)
+    for drill_role in $drill_roles; do
+      [ -n "$drill_role" ] || continue
+      docker_safe run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" \
+        psql -h 127.0.0.1 -p "$drill_port" -U "$target_user" -d "$target_db" \
+        -v ON_ERROR_STOP=1 \
+        -c "DO \$\$BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$drill_role') THEN CREATE ROLE \"$drill_role\" WITH LOGIN; END IF; END\$\$;" >/dev/null \
+        || { err "Drill target role setup failed."; exit 1; }
+    done
     docker_safe run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" psql -h 127.0.0.1 -p "$drill_port" \
       -U "$target_user" -d "$target_db" -v ON_ERROR_STOP=1 -c "CREATE TABLE heartbeat_restore_target_marker (marker text PRIMARY KEY); INSERT INTO heartbeat_restore_target_marker VALUES ('$marker');" >/dev/null
     identity=$(docker_safe inspect -f '{{.Name}}' "$drill_container")

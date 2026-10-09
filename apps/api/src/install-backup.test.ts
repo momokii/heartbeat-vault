@@ -121,7 +121,7 @@ describe('installer backup and restore safety', () => {
       const encrypted = await encryptBackup(
         await makePlainBackup(
           root,
-          `CREATE TABLE restore_drill_marker (value text PRIMARY KEY); INSERT INTO restore_drill_marker VALUES ('${marker}');`,
+          `CREATE TABLE restore_drill_marker (value text PRIMARY KEY); INSERT INTO restore_drill_marker VALUES ('${marker}'); ALTER TABLE restore_drill_marker OWNER TO drill_owner_role;`,
         ),
       );
       await livePool.query('DROP TABLE IF EXISTS restore_drill_marker');
