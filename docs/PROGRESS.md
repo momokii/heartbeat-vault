@@ -181,6 +181,28 @@
 - [x] Caddy smoke fixed (valid `MASTER_KEY` + `CADDY_BASE_URL` wired to the preview port) — job now green, proven locally and in CI.
 - [x] CI gate green on live runs; CodeQL green. Remaining red: release-please action step (checkout added, redundant input removed, config dry-run validated, full history fetched) — needs the repository Actions token-permission/log check below, which requires owner GitHub access.
 
+## Wave 3a: Encrypted backup and isolated restore — DONE (ultrawork loop)
+
+- [x] `install.sh backup` refuses unencrypted output (BACKUP_ENCRYPTION_KEY required, AES-256-CBC/PBKDF2); `restore` split into `--drill` (installer-provisioned disposable DB, no operator host/port, role pre-creation, identity checks, auto-teardown) and explicit `--live` (Compose db by name only, --yes + typed confirmation + 60s prompt bound, COMPOSE/DOCKER env neutralized).
+- [x] Real encrypted backup + isolated drill executed against the live stack: "Restore complete", live DB proven untouched, zero leftovers. First attempt failed honestly on a missing dump-owner role — the drill caught a real recovery gap.
+- [x] Backup suite 11/11 (destructive marker proofs, hostile-env cases, plaintext preservation). Oracle-verified.
+
+## Wave 3b: Owner deadline reminders — DONE (ultrawork loop)
+
+- [x] Separate reminder-job path (deterministic switch+deadline+stage+channel keys, concurrent-safe materialization, owner email from users).
+- [x] At-least-once email delivery documented and tested; bounded SMTP + send timeouts with hung-provider isolation proven through the production delivery path; error output redacted; failed sends retry with capped backoff.
+- [x] Scheduler tick materializes and dispatches reminders without disturbing lease reap, trigger claims, or release dispatch. Reminder actions carry their own `reminder` audit category with friendly labels. Oracle-verified.
+
+## Wave 3c: Bulk check-in — DONE (ultrawork loop)
+
+- [x] `POST /api/switches/check-in/all` checks in every active owned switch with per-switch results and audit rows; TOTP step-up enforced; dashboard "Check in all" button with confirmation, loading guard, and per-switch results.
+
+## Wave 3d: CI enablement — PARTIAL (gate + smoke green; release-please needs owner action)
+
+- [x] Release-please config/manifest/CHANGELOG seed, README badges, reusable image workflow wiring, Caddy smoke CI job (fixed MASTER_KEY + preview URL; proven locally and green in CI).
+- [x] CI gate green on live runs; CodeQL green.
+- [ ] Release-please action step still red after checkout/config/fetch-depth fixes; likely repository Actions token permissions — requires owner GitHub access (Settings → Actions → General → Workflow permissions).
+
 ## Key decisions
 
 - 2026-09-20 (user answers): deployment = single-household, one host, documented HA path; channels v1 = Email + Webhook + Telegram (Matrix/SFTP deferred); CI = GitHub Actions + GHCR; UI/docs = English only; license = permissive MIT/Apache-2.0 family (exact pick pending); threat priority = stolen-data-at-rest first (full STRIDE + ASVS map still required); release model = server-side automatic release for v1; hardened profile = NOT in v1 — standard-only v1, hardened (Vault vs OpenBao) deferred to next-development todo with ADRs.

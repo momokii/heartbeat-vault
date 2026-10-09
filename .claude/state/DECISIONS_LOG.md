@@ -143,3 +143,11 @@
   **Alternatives Rejected:** Bumping vitest and silently dropping Node 20 support; upgrading vite/eslint/TS without a migration spike; batching majors with the patch sweep (loses revertibility).
   **Security Implications:** None of the deferred items remediates a production-reachable advisory (see SECURITY.md audit posture); deferral does not widen exposure.
   **Impact:** TASK-003 in TASK_QUEUE.md tracks re-evaluation; no code changes.
+
+- Ultrawork loop: CI diagnosis, release automation, reminder at-least-once.
+  **Date:** ultrawork loop session
+  **Context:** Live CI showed gate failing at Typecheck plus release-please failing while the tree was locally green.
+  **Rationale:** Reproduced the typecheck failure in a pristine container: `@heartbeat-vault/e2e` imported `../../db/dist/*` without declaring the workspace dependency, so turbo's `^build` ordering never built it — fixed by declaring `@heartbeat-vault/db: workspace:*`. Caddy smoke failed for two deterministic reasons: an invalid `MASTER_KEY` (rejected by the fail-closed KEK check) and a missing `CADDY_BASE_URL` (spec defaulted to the wrong port) — both fixed and proven locally plus green in CI. Release-please still red after checkout/config/fetch-depth fixes; leading cause is repository Actions token permissions, which require owner GitHub access. Reminder delivery is honestly at-least-once (crash-after-accept can resend; SMTP Message-ID is best-effort, not enforced idempotency) — documented in API.md/DELIVERY_CHANNELS rather than claiming exactly-once.
+  **Alternatives Rejected:** Blind workflow edits without log evidence (stopped after three verified fixes; remaining cause needs owner access); claiming release automation proven (recorded as blocked instead).
+  **Security Implications:** None — CI fixes touch workflows/test config only; no auth/session/crypto semantics changed.
+  **Impact:** `fix(deps)`, `fix(ci)` commits; CI gate + CodeQL + caddy-smoke green on live runs.
