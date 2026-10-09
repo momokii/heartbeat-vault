@@ -36,22 +36,29 @@ function isFailedProcess(error: unknown): error is FailedProcess {
 }
 
 export async function createHarness(
-  database: Readonly<{ getUsername(): string; getDatabase(): string }>,
+  database: Readonly<{ getUsername(): string; getDatabase(): string; getPassword(): string }>,
   key?: string,
 ): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'heartbeat-backup-test-'));
   const bin = join(root, 'bin');
+  const cryptoBin = join(root, 'crypto-bin');
   await mkdir(bin);
+  await mkdir(cryptoBin);
   await writeFile(join(root, 'install.sh'), await readFile(installScript));
   await chmod(join(root, 'install.sh'), 0o700);
   await writeFile(
     join(root, '.env'),
     `POSTGRES_USER=${database.getUsername()}\nPOSTGRES_DB=${database.getDatabase()}\n${
       key === undefined ? '' : `BACKUP_ENCRYPTION_KEY=${key}\n`
-    }`,
+    }RESTORE_TARGET_USER=${database.getUsername()}\nRESTORE_TARGET_DB=${database.getDatabase()}\nRESTORE_TARGET_PASSWORD=${database.getPassword()}\n`,
   );
   await writeFile(join(bin, 'docker'), fakeDockerScript);
   await chmod(join(bin, 'docker'), 0o700);
+  await writeFile(
+    join(cryptoBin, 'openssl'),
+    '#!/bin/sh\ncase "${HV_DELAY_DECRYPTION:-0}:$*" in 1:*" -d "*) sleep 2;; esac\nexec /usr/bin/openssl "$@"\n',
+  );
+  await chmod(join(cryptoBin, 'openssl'), 0o700);
   return root;
 }
 
@@ -63,7 +70,14 @@ export async function runInstaller(
   try {
     const result = await execFileAsync(join(root, 'install.sh'), [...args], {
       cwd: root,
-      env: { ...process.env, PATH: `${join(root, 'bin')}:${process.env['PATH']}`, ...extraEnv },
+      env: {
+        ...process.env,
+        PATH:
+          extraEnv['HV_USE_REAL_DOCKER'] === '1'
+            ? process.env['PATH']
+            : `${join(root, 'bin')}:${process.env['PATH']}`,
+        ...extraEnv,
+      },
     });
     return { stdout: result.stdout, stderr: result.stderr, status: 0 };
   } catch (error) {

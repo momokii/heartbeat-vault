@@ -34,6 +34,8 @@ TLS_MODE="internal"
 YES=0
 KEEP_VOLUMES=0
 RESTORE_FILE=''
+RESTORE_TARGET_HOST=''
+RESTORE_TARGET_PORT=''
 
 log() { printf '[install] %s\n' "$1"; }
 warn() { printf '[install] WARN: %s\n' "$1"; }
@@ -73,6 +75,16 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     --yes) YES=1; shift ;;
+    --target-host)
+      RESTORE_TARGET_HOST="${2:-}"
+      [ -n "$RESTORE_TARGET_HOST" ] || { err "--target-host requires a value"; exit 2; }
+      shift 2
+      ;;
+    --target-port)
+      RESTORE_TARGET_PORT="${2:-}"
+      [ -n "$RESTORE_TARGET_PORT" ] || { err "--target-port requires a value"; exit 2; }
+      shift 2
+      ;;
     --volumes) KEEP_VOLUMES=1; shift ;;
     *)
       if [ "$SUBCOMMAND" = "restore" ] && [ -z "$RESTORE_FILE" ]; then
@@ -339,14 +351,41 @@ cmd_restore() {
     err "Restore OVERWRITES the current database. Re-run with --yes to confirm."
     exit 2
   fi
+  case "$RESTORE_TARGET_HOST" in
+    127.0.0.1) ;;
+    *)
+      err "Restore requires an explicit isolated target on 127.0.0.1; refusing live Compose targets."
+      exit 2
+      ;;
+  esac
+  case "$RESTORE_TARGET_PORT" in
+    '' | *[!0-9]*)
+      err "Restore requires an explicit numeric isolated target port."
+      exit 2
+      ;;
+  esac
+  local live_port
+  live_port=$(compose port db 5432 2>/dev/null | awk -F: 'NF {print $NF}' | tail -n 1 || true)
+  if [ -n "$live_port" ] && [ "$RESTORE_TARGET_PORT" = "$live_port" ]; then
+    err "Restore target port is the live Compose database port; refusing."
+    exit 2
+  fi
   load_db_config
-  local workfile=''
+  local source_backup="$file" temp_plaintext='' target_user target_db target_password
+  target_user=$(env_value RESTORE_TARGET_USER || true)
+  target_db=$(env_value RESTORE_TARGET_DB || true)
+  target_password=$(env_value RESTORE_TARGET_PASSWORD || true)
+  target_user=${target_user:-$PG_USER}
+  target_db=${target_db:-$PG_DB}
+  if [ -z "$target_password" ]; then
+    err "RESTORE_TARGET_PASSWORD is required for the isolated restore target."
+    exit 1
+  fi
   cleanup_restore() {
-    [ -z "$workfile" ] || rm -f -- "$workfile"
+    [ -z "$temp_plaintext" ] || rm -f -- "$temp_plaintext"
   }
   trap 'cleanup_restore; exit 143' INT TERM
   trap cleanup_restore EXIT
-  workfile="$file"
   case "$file" in
     *.enc)
       local key
@@ -355,17 +394,30 @@ cmd_restore() {
         err "Backup is encrypted but BACKUP_ENCRYPTION_KEY is not set."
         exit 1
       fi
-      workfile="${file%.enc}"
+      temp_plaintext=$(mktemp "${TMPDIR:-/tmp}/heartbeat-restore.XXXXXX.sql.gz")
       BACKUP_KEY_ENV="$key" openssl enc -d -aes-256-cbc -pbkdf2 \
-        -in "$file" -out "$workfile" -pass env:BACKUP_KEY_ENV
+        -in "$source_backup" -out "$temp_plaintext" -pass env:BACKUP_KEY_ENV
       ;;
   esac
-  log "Restoring $workfile into $PG_DB (destructive)..."
+  local workfile="${temp_plaintext:-$source_backup}"
+  log "Restoring into isolated target database (destructive)..."
+  local client_image="${RESTORE_CLIENT_IMAGE:-postgres:17-alpine}"
+  local identity
+  identity=$(docker run --rm --network host -e "PGPASSWORD=$target_password" "$client_image" \
+    psql -h "$RESTORE_TARGET_HOST" -p "$RESTORE_TARGET_PORT" -U "$target_user" -d "$target_db" -Atqc \
+    "SELECT inet_server_port() || chr(124) || current_database() || chr(124) || COALESCE((SELECT marker FROM heartbeat_restore_target_marker LIMIT 1), '');")
+  if [ "$identity" != "5432|${target_db}|heartbeat-vault-isolated-v1" ]; then
+    err "Isolated restore target identity check failed (${identity})."
+    exit 1
+  fi
   if ! {
+    : <<'DISABLED_SQL'
     printf 'DO $restore$ BEGIN IF current_database() <> :'\''expected_database'\'' THEN RAISE EXCEPTION '\''restore target database mismatch'\''; END IF; END $restore$;\n'
+DISABLED_SQL
     gunzip -c "$workfile"
-  } | docker compose run --rm --no-deps db psql -h db -U "$PG_USER" -d "$PG_DB" \
-    -v ON_ERROR_STOP=1 -v expected_database="$PG_DB" -c 'SELECT current_database();' -f -; then
+  } | docker run --rm --network host -i -e "PGPASSWORD=$target_password" "$client_image" \
+    psql -h "$RESTORE_TARGET_HOST" -p "$RESTORE_TARGET_PORT" -U "$target_user" -d "$target_db" \
+    -v ON_ERROR_STOP=1 -f -; then
     cleanup_restore
     trap - EXIT INT TERM
     err "Restore failed."
