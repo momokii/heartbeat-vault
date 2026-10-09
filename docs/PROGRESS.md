@@ -175,11 +175,11 @@
 
 ## Maintenance sweep — IN PROGRESS (dependencies, docs/state refresh, GHSA review)
 
-## Wave 2h: CI failure diagnosis — IN PROGRESS
+## Wave 2h: CI failure diagnosis — DONE (gate green; release-please needs owner action)
 
-- [x] Live CI showed gate failing at the Typecheck step and release-please failing, while the tree was green locally. Reproduced in a pristine `node:22-bookworm` container: `@heartbeat-vault/e2e#typecheck` imports `../../db/dist/*` (built output) without declaring `@heartbeat-vault/db` as a dependency, so turbo's `^build` ordering never built it — a phantom dependency masked locally by a stale `dist/`. Fixed by declaring the workspace dependency; verified by deleting `dist/` and watching turbo rebuild it (`dist/migrate.js` present, typecheck 8/8).
-- [ ] Release-please still fails in CI after adding the missing checkout step and removing the redundant input; config validated locally via dry-run. Leading hypothesis: repository Actions token permissions restrict write access — requires the owner to check Settings → Actions → General → Workflow permissions.
-- [ ] Fresh CI observation pending on the fix commit.
+- [x] Live CI showed gate failing at Typecheck plus release-please failing. Reproduced in a pristine container: `@heartbeat-vault/e2e` imported `../../db/dist/*` without declaring the workspace dependency, so turbo's `^build` ordering never built it — a phantom dependency masked locally by stale `dist/`. Fixed by declaring `@heartbeat-vault/db: workspace:*`; verified by deleting `dist/` and watching turbo rebuild it.
+- [x] Caddy smoke fixed (valid `MASTER_KEY` + `CADDY_BASE_URL` wired to the preview port) — job now green, proven locally and in CI.
+- [x] CI gate green on live runs; CodeQL green. Remaining red: release-please action step (checkout added, redundant input removed, config dry-run validated, full history fetched) — needs the repository Actions token-permission/log check below, which requires owner GitHub access.
 
 ## Key decisions
 
