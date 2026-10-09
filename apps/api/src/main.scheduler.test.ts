@@ -1,6 +1,5 @@
 import { Pool } from 'pg';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { withReminderDeadline } from './reminders/index.js';
 
 const mocks = vi.hoisted(() => ({
   checkClockSkew: vi.fn(),
@@ -33,9 +32,8 @@ vi.mock('./lib/trigger-engine.js', () => ({
 vi.mock('./channels/dispatch.js', () => ({
   deliverPendingDeliveries: mocks.deliverPendingDeliveries,
 }));
-vi.mock('./reminders/delivery.js', () => ({
-  createReminderEmailSender: mocks.createReminderEmailSender,
-  deliverPendingOwnerReminders: mocks.deliverPendingOwnerReminders,
+vi.mock('./reminders/delivery.js', async () => ({
+  ...(await vi.importActual<typeof import('./reminders/delivery.js')>('./reminders/delivery.js')),
 }));
 vi.mock('./channels/registry.js', () => ({
   createConfiguredChannelRegistry: mocks.createConfiguredChannelRegistry,
@@ -104,6 +102,33 @@ describe('scheduler owner reminders', () => {
     const pool = new Pool();
     const emailChannel = { send: vi.fn().mockImplementation(() => new Promise(() => undefined)) };
     const registry = { get: vi.fn().mockReturnValue(emailChannel), names: ['email'] };
+    const client = {
+      query: vi.fn().mockImplementation((text: string) => {
+        if (text.includes('SELECT id, switch_id, owner_email')) {
+          const claim = client.query.mock.calls.filter(([query]) =>
+            String(query).includes('SELECT id, switch_id, owner_email'),
+          ).length;
+          if (claim > 1) return Promise.resolve({ rows: [] });
+          return Promise.resolve({
+            rows: [
+              {
+                id: '11111111-1111-4111-8111-111111111111',
+                switch_id: SWITCH_ID,
+                owner_email: 'owner@example.test',
+                deadline_at: DEADLINE,
+                stage: 'reminder',
+                channel: 'email',
+                idempotency_key: 'reminder-key',
+              },
+            ],
+          });
+        }
+        if (text.includes('INSERT INTO audit_log')) return Promise.resolve({ rows: [{ id: 1 }] });
+        return Promise.resolve({ rows: [] });
+      }),
+      release: vi.fn(),
+    };
+    vi.spyOn(pool, 'connect').mockImplementation(() => Promise.resolve(client));
     const query = vi.spyOn(pool, 'query').mockImplementation(() =>
       Promise.resolve({
         rows: [],
@@ -128,40 +153,6 @@ describe('scheduler owner reminders', () => {
     mocks.reapExpiredLeases.mockResolvedValue(0);
     mocks.claimJob.mockResolvedValueOnce(releaseJob).mockResolvedValueOnce(null);
     mocks.processJob.mockResolvedValue(undefined);
-    mocks.createReminderEmailSender.mockReturnValue(
-      async (message: {
-        readonly to: string;
-        readonly switchId: string;
-        readonly subject: string;
-        readonly text: string;
-        readonly idempotencyKey: string;
-      }) => {
-        await emailChannel.send({
-          channel: 'email',
-          idempotencyKey: message.idempotencyKey,
-          address: message.to,
-          payload: {
-            kind: 'reminder',
-            switchId: message.switchId,
-            recipientId: message.to,
-          },
-        });
-        return { status: 'sent', receipt: 'unreachable' };
-      },
-    );
-    mocks.deliverPendingOwnerReminders.mockImplementation(async (_pool, sendEmail) => {
-      await withReminderDeadline(
-        sendEmail({
-          to: 'owner@example.test',
-          switchId: SWITCH_ID,
-          subject: 'reminder',
-          text: 'reminder',
-          idempotencyKey: 'reminder-key',
-        }),
-        { status: 'retry', error: 'reminder provider deadline exceeded' },
-      );
-      return { sent: 0, failed: 1 };
-    });
     mocks.deliverPendingDeliveries.mockResolvedValue({ sent: 0, retried: 0, dead: 0 });
     mocks.materializeOwnerReminder.mockResolvedValue(undefined);
     vi.useFakeTimers();
@@ -169,7 +160,7 @@ describe('scheduler owner reminders', () => {
 
     const cycle = runSchedulerCycle(pool, registry, 'worker-1', 60, 5_000);
     await vi.waitFor(() => expect(emailChannel.send).toHaveBeenCalledTimes(1));
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_001);
     await cycle;
 
     expect(mocks.reapExpiredLeases).toHaveBeenCalledWith(pool, expect.any(Date));
@@ -180,6 +171,10 @@ describe('scheduler owner reminders', () => {
       'worker-1',
       expect.any(Date),
     );
+    expect(client.query).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE reminder_jobs'),
+      expect.arrayContaining(['11111111-1111-4111-8111-111111111111']),
+    );
     expect(query).toHaveBeenCalled();
     await pool.end();
   });
@@ -188,15 +183,32 @@ describe('scheduler owner reminders', () => {
     const { runSchedulerCycle } = await import('./main.js');
     const pool = new Pool();
     const registry = { get: vi.fn().mockReturnValue({ send: vi.fn() }), names: ['email'] };
+    vi.spyOn(pool, 'query').mockImplementation(() =>
+      Promise.resolve({
+        rows: [],
+        command: 'SELECT',
+        rowCount: 0,
+        oid: 0,
+        fields: [],
+      }),
+    );
+    const client = {
+      query: vi.fn().mockImplementation((text: string) => {
+        if (text === 'BEGIN')
+          return Promise.reject(
+            new Error(
+              'switch 22222222-2222-4222-8222-222222222222: smtp://mail.example.test failed for owner@example.com token abcdef0123456789abcdef0123456789. DETAIL: Key (email)=(owner@example.com) already exists',
+            ),
+          );
+        return Promise.resolve({ rows: [] });
+      }),
+      release: vi.fn(),
+    };
+    vi.spyOn(pool, 'connect').mockImplementation(() => Promise.resolve(client));
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     mocks.checkClockSkew.mockResolvedValue({ uncertain: false, skewMs: 0 });
     mocks.runSchedulerTick.mockResolvedValue(0);
     mocks.materializeOwnerReminder.mockResolvedValue(undefined);
-    mocks.deliverPendingOwnerReminders.mockRejectedValue(
-      new Error(
-        'switch 22222222-2222-4222-8222-222222222222: smtp://mail.example.test failed for owner@example.com token abcdef0123456789abcdef0123456789. DETAIL: Key (email)=(owner@example.com) already exists',
-      ),
-    );
     mocks.reapExpiredLeases.mockResolvedValue(0);
     mocks.claimJob.mockResolvedValue(null);
     mocks.deliverPendingDeliveries.mockResolvedValue({ sent: 0, retried: 0, dead: 0 });
