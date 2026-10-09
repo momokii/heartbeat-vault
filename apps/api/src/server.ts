@@ -13,6 +13,7 @@ import { registerAdminRoutes } from './routes/admin.js';
 import { registerOpenRegistrationRoute } from './routes/register.js';
 import { registerSwitchRoutes } from './routes/switches.js';
 import { registerHeartbeatRoutes } from './routes/heartbeat.js';
+import { registerBulkCheckInRoutes } from './routes/bulk-check-in.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
 import { registerAuditLogRoutes, registerSwitchAuditRoutes } from './routes/audit-log.js';
 import { registerReportsRoutes } from './routes/reports.js';
@@ -59,6 +60,7 @@ export async function buildServer(
   await registerOpenRegistrationRoute(app, pool);
   await registerSwitchRoutes(app, pool);
   await registerHeartbeatRoutes(app, pool);
+  await registerBulkCheckInRoutes(app, pool);
   await registerTriggerRoutes(app, pool);
   await registerAuditLogRoutes(app, pool);
   await registerSwitchAuditRoutes(app, pool);

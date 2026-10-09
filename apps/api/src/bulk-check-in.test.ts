@@ -96,7 +96,7 @@ describe('bulk manual check-in', () => {
     expect(response.statusCode).toBe(200);
     const auditRows = await pool.query(
       `SELECT target FROM audit_log
-       WHERE action='heartbeat_checkin' AND target = ANY($1::uuid[])`,
+       WHERE action='heartbeat_checkin' AND target::uuid = ANY($1::uuid[])`,
       [switchIds],
     );
     expect(auditRows.rows).toHaveLength(switchIds.length);
