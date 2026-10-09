@@ -392,6 +392,8 @@ export const reminderJobs = pgTable(
     stage: text('stage').notNull(),
     channel: text('channel').notNull(),
     state: text('state').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
     idempotencyKey: text('idempotency_key').notNull().unique(),
     lastError: text('last_error'),
     sentAt: timestamp('sent_at', { withTimezone: true }),

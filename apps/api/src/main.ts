@@ -7,6 +7,8 @@ import { claimJob, failJob, processJob, reapExpiredLeases } from './lib/trigger-
 import { deliverPendingDeliveries } from './channels/dispatch.js';
 import { createConfiguredChannelRegistry } from './channels/registry.js';
 import type { ChannelRegistry } from './channels/types.js';
+import { materializeOwnerReminder } from './reminders/index.js';
+import { createReminderEmailSender, deliverPendingOwnerReminders } from './reminders/delivery.js';
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -41,7 +43,56 @@ function configuredIntegerEnvironment(
 // Cycle order is a safety contract, not preference: compensate for outages
 // and materialize before working jobs, and hold everything when the host
 // clock diverges from Postgres beyond the skew budget (ADR-004: never guess).
-async function runSchedulerCycle(
+type DueOwnerReminder = {
+  readonly switchId: string;
+  readonly deadlineAt: Date;
+  readonly stage: 'reminder' | 'warning';
+};
+
+async function materializeDueOwnerReminders(pool: Pool, now: Date): Promise<void> {
+  try {
+    const due = await pool.query<DueOwnerReminder>(
+      `
+      SELECT s.id AS "switchId", s.next_deadline AS "deadlineAt", stages.stage
+      FROM switches s
+      CROSS JOIN (VALUES
+        ('reminder'::text, 0::double precision),
+        ('warning'::text, 0.25::double precision)
+      ) AS stages(stage, interval_fraction)
+      WHERE s.status = 'active'
+        AND s.trigger_type = 'heartbeat'
+        AND s.next_deadline IS NOT NULL
+        AND s.next_deadline + s.heartbeat_interval * stages.interval_fraction <= $1
+    `,
+      [now],
+    );
+
+    for (const reminder of due.rows) {
+      try {
+        await materializeOwnerReminder(
+          pool,
+          {
+            switchId: reminder.switchId,
+            deadlineAt: reminder.deadlineAt.toISOString(),
+            stage: reminder.stage,
+            channel: 'email',
+          },
+          now,
+        );
+      } catch (error: unknown) {
+        process.stderr.write(
+          `owner reminder materialization failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
+        );
+      }
+    }
+  } catch (error: unknown) {
+    process.stderr.write(
+      `owner reminder scan failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
+    );
+  }
+}
+
+export async function runSchedulerCycle(
   pool: Pool,
   registry: ChannelRegistry,
   workerId: string,
@@ -55,6 +106,22 @@ async function runSchedulerCycle(
   }
   const now = new Date();
   await runSchedulerTick(pool, workerId, now, tickIntervalSec);
+  await materializeDueOwnerReminders(pool, now);
+  const emailChannel = registry.get('email');
+  if (emailChannel !== undefined) {
+    try {
+      await deliverPendingOwnerReminders(
+        pool,
+        createReminderEmailSender(emailChannel),
+        workerId,
+        now,
+      );
+    } catch (error: unknown) {
+      process.stderr.write(
+        `owner reminder delivery failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
+      );
+    }
+  }
   await reapExpiredLeases(pool, now);
   for (;;) {
     const job = await claimJob(pool, workerId, now);

@@ -186,3 +186,141 @@ describe('owner reminder audit trail', () => {
     expect(rows.rows.map(row => row.action)).toContain('reminder_failed');
   });
 });
+
+describe('owner reminder delivery worker', () => {
+  it('claims and sends pending reminders without creating release deliveries', async () => {
+    const { deliverPendingOwnerReminders } = await import('./delivery.js');
+    const { materializeOwnerReminder } = await import('./index.js');
+    await seedOwner('owner@example.test');
+    await materializeOwnerReminder(
+      pool,
+      {
+        switchId: SWITCH_ID,
+        deadlineAt: FIXED_NOW.toISOString(),
+        stage: 'warning',
+        channel: 'email',
+      },
+      FIXED_NOW,
+    );
+    const send = vi.fn().mockResolvedValue({ status: 'sent', receipt: 'smtp-delivery-1' });
+
+    const summary = await deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
+
+    expect(summary).toEqual({ sent: 1, failed: 0 });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((await pool.query(`SELECT id FROM delivery_jobs`)).rows).toHaveLength(0);
+  });
+
+  it('redelivery claims no sent job and invokes the provider once', async () => {
+    const { deliverPendingOwnerReminders } = await import('./delivery.js');
+    const { materializeOwnerReminder } = await import('./index.js');
+    await seedOwner('owner@example.test');
+    await materializeOwnerReminder(
+      pool,
+      {
+        switchId: SWITCH_ID,
+        deadlineAt: FIXED_NOW.toISOString(),
+        stage: 'reminder',
+        channel: 'email',
+      },
+      FIXED_NOW,
+    );
+    const send = vi.fn().mockResolvedValue({ status: 'sent', receipt: 'smtp-delivery-2' });
+
+    await deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
+    await deliverPendingOwnerReminders(pool, send, 'worker-2', FIXED_NOW);
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('records provider failure as retryable pending state with backoff', async () => {
+    const { deliverPendingOwnerReminders } = await import('./delivery.js');
+    const { materializeOwnerReminder } = await import('./index.js');
+    await seedOwner('owner@example.test');
+    const job = await materializeOwnerReminder(
+      pool,
+      {
+        switchId: SWITCH_ID,
+        deadlineAt: FIXED_NOW.toISOString(),
+        stage: 'reminder',
+        channel: 'email',
+      },
+      FIXED_NOW,
+    );
+    const send = vi.fn().mockResolvedValue({ status: 'retry', error: 'smtp unavailable' });
+
+    const summary = await deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
+
+    expect(summary).toEqual({ sent: 0, failed: 1 });
+    const retryState = await pool.query<{
+      readonly state: string;
+      readonly attempts: number;
+      readonly next_attempt_at: Date;
+      readonly last_error: string;
+    }>(`SELECT state, attempts, next_attempt_at, last_error FROM reminder_jobs WHERE id = $1`, [
+      job.id,
+    ]);
+    expect(retryState.rows[0]).toMatchObject({
+      state: 'pending',
+      attempts: 1,
+      last_error: 'smtp unavailable',
+    });
+    expect(retryState.rows[0]?.next_attempt_at.toISOString()).toBe('2026-10-01T00:01:00.000Z');
+    const audit = await pool.query<{ readonly action: string }>(
+      `SELECT action FROM audit_log WHERE target = $1`,
+      [job.idempotencyKey],
+    );
+    expect(audit.rows.map(row => row.action)).toContain('reminder_failed');
+  });
+
+  it('retries due failures and makes the fifth failure terminal', async () => {
+    const { deliverPendingOwnerReminders } = await import('./delivery.js');
+    const { materializeOwnerReminder } = await import('./index.js');
+    await seedOwner('owner@example.test');
+    const job = await materializeOwnerReminder(
+      pool,
+      {
+        switchId: SWITCH_ID,
+        deadlineAt: FIXED_NOW.toISOString(),
+        stage: 'reminder',
+        channel: 'email',
+      },
+      FIXED_NOW,
+    );
+    const send = vi.fn().mockResolvedValue({ status: 'retry', error: 'smtp unavailable' });
+
+    await deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
+    await deliverPendingOwnerReminders(
+      pool,
+      send,
+      'worker-1',
+      new Date('2026-10-01T00:01:00.000Z'),
+    );
+    await deliverPendingOwnerReminders(
+      pool,
+      send,
+      'worker-1',
+      new Date('2026-10-01T00:05:00.000Z'),
+    );
+    await deliverPendingOwnerReminders(
+      pool,
+      send,
+      'worker-1',
+      new Date('2026-10-01T00:14:00.000Z'),
+    );
+    await deliverPendingOwnerReminders(
+      pool,
+      send,
+      'worker-1',
+      new Date('2026-10-01T00:30:00.000Z'),
+    );
+
+    expect(send).toHaveBeenCalledTimes(5);
+    const state = await pool.query<{
+      readonly state: string;
+      readonly attempts: number;
+      readonly next_attempt_at: Date | null;
+    }>(`SELECT state, attempts, next_attempt_at FROM reminder_jobs WHERE id = $1`, [job.id]);
+    expect(state.rows[0]).toEqual({ state: 'failed', attempts: 5, next_attempt_at: null });
+  });
+});
