@@ -19,8 +19,12 @@ const item = {
 };
 
 function renderPage(): void {
+  renderPageWithItem(item);
+}
+
+function renderPageWithItem(switchItem: typeof item): void {
   render(
-    <MemoryRouter initialEntries={[`/switches/${item.id}`]}>
+    <MemoryRouter initialEntries={[`/switches/${switchItem.id}`]}>
       <Routes>
         <Route path="/" element={<p>Dashboard</p>} />
         <Route path="/switches/:id" element={<SwitchDetailPage />} />
@@ -212,6 +216,116 @@ describe('SwitchDetailPage', () => {
 
     expect(await screen.findByText('No recorded activity for this switch.')).toBeVisible();
     expect(screen.getByRole('button', { name: 'Arm switch' })).toBeEnabled();
+  });
+
+  it('lists delegates for an owner with their email, start date, and revoke control', async () => {
+    const ownerItem = { ...item, isOwner: true };
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(ownerItem))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: '2abec2f0-9b2f-4d14-ae5f-d8c7a0956d3f',
+            email: 'delegate@example.test',
+            createdAt: '2026-01-03T03:04:05.000Z',
+          },
+        ]),
+      );
+    renderPageWithItem(ownerItem);
+
+    expect(await screen.findByText('delegate@example.test')).toBeVisible();
+    expect(screen.getByText(/Since/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Revoke' })).toBeVisible();
+  });
+
+  it('grants a delegate after validating and submitting their email', async () => {
+    const ownerItem = { ...item, isOwner: true };
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(ownerItem))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: '2abec2f0-9b2f-4d14-ae5f-d8c7a0956d3f',
+          delegateUserId: '3abec2f0-9b2f-4d14-ae5f-d8c7a0956d3f',
+          createdAt: '2026-01-03T03:04:05.000Z',
+        }),
+      );
+    renderPageWithItem(ownerItem);
+
+    const input = await screen.findByLabelText('Delegate email');
+    fireEvent.change(input, { target: { value: 'delegate@example.test' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Grant delegate access' }));
+
+    expect(await screen.findByText('Delegate added.')).toBeVisible();
+    expect(screen.getByText('delegate@example.test')).toBeVisible();
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      `/api/switches/${item.id}/delegates`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ email: 'delegate@example.test' }),
+      }),
+    );
+  });
+
+  it('shows a readable grant error for an already assigned delegate', async () => {
+    const ownerItem = { ...item, isOwner: true };
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(ownerItem))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(errorResponse(409));
+    renderPageWithItem(ownerItem);
+
+    fireEvent.change(await screen.findByLabelText('Delegate email'), {
+      target: { value: 'delegate@example.test' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Grant delegate access' }));
+
+    expect(
+      await screen.findByText('That user is already a delegate for this switch.'),
+    ).toBeVisible();
+  });
+
+  it('requires confirmation before revoking a delegate', async () => {
+    const ownerItem = { ...item, isOwner: true };
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(ownerItem))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }))
+      .mockResolvedValueOnce(
+        jsonResponse([
+          {
+            id: '2abec2f0-9b2f-4d14-ae5f-d8c7a0956d3f',
+            email: 'delegate@example.test',
+            createdAt: '2026-01-03T03:04:05.000Z',
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    renderPageWithItem(ownerItem);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Revoke' }));
+    expect(screen.getByRole('alertdialog', { name: /delegate@example.test/ })).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke access' }));
+    expect(await screen.findByText('Delegate revoked.')).toBeVisible();
+    expect(screen.queryByText('delegate@example.test')).not.toBeInTheDocument();
+  });
+
+  it('hides delegate management from non-owners', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ ...item, isOwner: false }))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextBeforeId: null }));
+    renderPage();
+
+    await screen.findByText('No recorded activity for this switch.');
+    expect(screen.queryByText('Delegates')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Delegate email')).not.toBeInTheDocument();
   });
 
   it('preserves the switch missing state when the detail request returns 404', async () => {

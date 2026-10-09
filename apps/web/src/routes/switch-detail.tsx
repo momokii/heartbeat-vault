@@ -7,6 +7,7 @@ import { FieldGuidance } from '@/components/ui/field-guidance';
 import { SwitchSetup } from '@/components/switches/switch-setup';
 import { HeartbeatCheckin } from '@/components/switches/heartbeat-checkin';
 import { TriggerConfiguration } from '@/components/switches/trigger-configuration';
+import { TrustedDelegates } from '@/components/switches/trusted-delegates';
 import { SwitchSettings } from '@/components/switches/switch-settings';
 import { SwitchHistory } from '@/components/switches/switch-history';
 import { useSwitchHistory } from '@/components/switches/use-switch-history';
@@ -25,6 +26,7 @@ const switchSchema = z.object({
   nextDeadline: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  isOwner: z.boolean().optional().default(false),
 });
 const operationSchema = z.object({ ok: z.literal(true), status: z.enum(['active', 'paused']) });
 type Switch = z.infer<typeof switchSchema>;
@@ -221,6 +223,7 @@ export function SwitchDetailPage() {
           })
         }
       />
+      {state.item.isOwner ? <TrustedDelegates switchId={state.item.id} /> : null}
     </div>
   );
 }
