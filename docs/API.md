@@ -96,8 +96,11 @@ All switch routes require an authenticated owner or administrator. UUID paths th
 | `DELETE` | `/api/switches/:id/recipients/:rid`       | Remove a recipient where the lifecycle permits it.                                                                                                                      |
 | `POST`   | `/api/switches/:id/arm`                   | Arm a switch; body requires `confirm: true`, and `fail_deadly` requires typed switch-ID confirmation.                                                                   |
 | `POST`   | `/api/switches/:id/disarm`                | Return an active switch to paused state.                                                                                                                                |
-| `POST`   | `/api/switches/:id/delegates`             | Grant a registered user pause-only access; owner-only.                                                                                                                  |
+| `POST`   | `/api/switches/:id/delegates`             | Grant a registered user pause-only access by email; owner-only.                                                                                                         |
+| `GET`    | `/api/switches/:id/delegates`             | List pause-only delegates with emails; owner-only.                                                                                                                      |
 | `DELETE` | `/api/switches/:id/delegates/:delegateId` | Revoke pause-only access; owner-only.                                                                                                                                   |
+| `POST`   | `/api/switches/:id/duplicate`             | Copy a switch's configuration into a new paused switch (no payload, recipients, tokens, or history); owner-only.                                                        |
+| `POST`   | `/api/switches/:id/test-release`          | Send a clearly-marked test message through every configured channel without changing release state; owner-only, rate-limited.                                           |
 | `POST`   | `/api/switches/:id/check-in`              | Record a heartbeat before the deadline.                                                                                                                                 |
 | `POST`   | `/api/switches/check-in/all`              | Check in every active switch owned by the caller in one call; returns one result per switch and writes one audit row each. TOTP step-up applies as for single check-in. |
 | `POST`   | `/api/switches/:id/trigger`               | Start the trigger path according to the authorized flow.                                                                                                                |
@@ -122,7 +125,8 @@ single-switch responses omit `ownerEmail`.
 - Released switches are immutable and cannot be deleted or have their payload replaced.
 - Only administrators can use the all-switch listing; normal users see their own switches.
 - The API records audit events for switch creation, updates, payload storage, arming, disarming, and deletion.
-- A trusted delegate may only disarm or cancel a pending trigger for the specific switch. Delegation grants, revocations, and delegate actions record the actor and delegation ID; all other switch paths remain owner-only and return `404 { "error": "not_found" }` to delegates.
+- A trusted delegate may only disarm or cancel a pending trigger for the specific switch. Delegation grants, revocations, and delegate actions record the actor and delegation ID; all other switch paths remain owner-only and return `404 { "error": "not_found" }` to delegates. Granting by email fails closed (404) when the address is unknown, is yours, or matches several case-variant accounts. Cancel is rejected with `409 { "error": "cancel_blocked" }` for released switches — cancellation only pauses pending pre-fire flows.
+- Duplicating a switch copies configuration only (mode, intervals, dry-run flag, release policy, trigger config); the copy starts paused with no payload, recipients, tokens, links, history, or jobs, and records `duplicatedFrom`. A test release delivers `[TEST]`-marked messages with `test:`-prefixed idempotency keys through the configured channels, changes nothing, and is rate-limited per switch; delivery is at-least-once like production channels.
 
 ## Integration notes
 

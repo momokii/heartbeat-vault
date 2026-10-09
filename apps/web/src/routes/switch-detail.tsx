@@ -8,6 +8,8 @@ import { SwitchSetup } from '@/components/switches/switch-setup';
 import { HeartbeatCheckin } from '@/components/switches/heartbeat-checkin';
 import { TriggerConfiguration } from '@/components/switches/trigger-configuration';
 import { TrustedDelegates } from '@/components/switches/trusted-delegates';
+import { DuplicateSwitch } from '@/components/switches/duplicate-switch';
+import { TestRelease } from '@/components/switches/test-release';
 import { SwitchSettings } from '@/components/switches/switch-settings';
 import { SwitchHistory } from '@/components/switches/switch-history';
 import { useSwitchHistory } from '@/components/switches/use-switch-history';
@@ -224,6 +226,10 @@ export function SwitchDetailPage() {
         }
       />
       {state.item.isOwner ? <TrustedDelegates switchId={state.item.id} /> : null}
+      {state.item.isOwner ? (
+        <DuplicateSwitch switchId={state.item.id} switchTitle={state.item.title} />
+      ) : null}
+      {state.item.isOwner ? <TestRelease switchId={state.item.id} /> : null}
     </div>
   );
 }
