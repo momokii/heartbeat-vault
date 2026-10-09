@@ -309,6 +309,8 @@ describe('audit read APIs', () => {
       ['quorum_vote_recorded', 'trigger'],
       ['heartbeat_checked_in', 'heartbeat'],
       ['delivery_succeeded', 'delivery'],
+      ['reminder_sent', 'reminder'],
+      ['reminder_failed', 'reminder'],
       ['unclassified_event', 'system'],
     ] as const;
     for (const [action] of categoryActions) await insertAudit({ action });

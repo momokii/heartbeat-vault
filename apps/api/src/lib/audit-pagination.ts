@@ -15,6 +15,7 @@ export const auditCategories = [
   'trigger',
   'heartbeat',
   'delivery',
+  'reminder',
   'system',
 ] as const;
 
@@ -78,6 +79,7 @@ function categoryExpression(actionColumn: string): string {
     WHEN ${actionColumn} LIKE 'trigger\\_%' ESCAPE '\\' OR ${actionColumn} LIKE 'quorum\\_%' ESCAPE '\\' THEN 'trigger'
     WHEN ${actionColumn} LIKE 'heartbeat\\_%' ESCAPE '\\' THEN 'heartbeat'
     WHEN ${actionColumn} LIKE 'delivery\\_%' ESCAPE '\\' THEN 'delivery'
+    WHEN ${actionColumn} LIKE 'reminder\\_%' ESCAPE '\\' THEN 'reminder'
     ELSE 'system'
   END`;
 }

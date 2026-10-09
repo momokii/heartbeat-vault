@@ -17,6 +17,7 @@ const auditItemSchema = z.object({
     'trigger',
     'heartbeat',
     'delivery',
+    'reminder',
     'system',
   ]),
   details: z.record(z.string(), z.unknown()),

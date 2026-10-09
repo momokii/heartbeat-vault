@@ -10,6 +10,7 @@ export const AUDIT_CATEGORIES = [
   'trigger',
   'heartbeat',
   'delivery',
+  'reminder',
   'system',
 ] as const;
 
@@ -51,6 +52,7 @@ export const AUDIT_CATEGORY_LABELS: Record<AuditCategory, string> = {
   trigger: 'Trigger',
   heartbeat: 'Heartbeat',
   delivery: 'Delivery',
+  reminder: 'Reminder',
   system: 'System',
 };
 
@@ -86,6 +88,8 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   heartbeat_token_issued: 'Heartbeat token issued',
   heartbeat_link_issued: 'Heartbeat link issued',
   downtime_recovery: 'Recovered from downtime',
+  reminder_sent: 'Reminder sent',
+  reminder_failed: 'Reminder failed',
   '2fa_totp_enroll_started': '2FA enrollment started',
   '2fa_totp_enabled': '2FA enabled',
   '2fa_totp_challenge_ok': '2FA verified',

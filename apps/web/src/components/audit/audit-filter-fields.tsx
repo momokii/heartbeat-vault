@@ -18,6 +18,7 @@ const CATEGORY_LABELS: Record<AuditCategory, string> = {
   trigger: 'Trigger',
   heartbeat: 'Heartbeat',
   delivery: 'Delivery',
+  reminder: 'Reminder',
   system: 'System',
 };
 
