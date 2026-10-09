@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { z } from 'zod';
 import { ListPagination } from '@/components/list/list-pagination';
 import { ListSearchInput } from '@/components/list/list-search-input';
+import { BulkCheckIn } from '@/components/switches/bulk-check-in';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { apiClient, ApiError } from '@/lib/api-client';
@@ -156,6 +157,11 @@ export function HomePage() {
         </Card>
       ) : (
         <>
+          <BulkCheckIn
+            switches={state.switches
+              .filter(switchItem => switchItem.status === 'active')
+              .map(switchItem => ({ id: switchItem.id, title: switchItem.title }))}
+          />
           <section
             aria-label="Filter switches"
             className="grid gap-4 rounded-md border p-4 sm:grid-cols-2"
