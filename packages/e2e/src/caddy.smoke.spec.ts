@@ -18,4 +18,6 @@ test('proxies API health through Caddy', async ({ request }) => {
   const response = await request.get('/api/health');
 
   expect(response.status()).toBe(200);
+  await expect(response).toBeOK();
+  await expect(response.json()).resolves.toEqual({ status: 'ok' });
 });
