@@ -1,5 +1,7 @@
 # Heartbeat Vault
 
+[![CI](https://github.com/momokii/heartbeat-vault/actions/workflows/ci.yml/badge.svg)](https://github.com/momokii/heartbeat-vault/actions/workflows/ci.yml) [![CodeQL](https://github.com/momokii/heartbeat-vault/actions/workflows/codeql.yml/badge.svg)](https://github.com/momokii/heartbeat-vault/actions/workflows/codeql.yml) [![Release Please](https://github.com/momokii/heartbeat-vault/actions/workflows/release-please.yml/badge.svg)](https://github.com/momokii/heartbeat-vault/actions/workflows/release-please.yml)
+
 Heartbeat Vault is a self-hosted dead-man's-switch service. You encrypt a payload, choose verified recipients and delivery channels, then check in on a schedule. If you miss the deadline and grace period, the service releases the configured material.
 
 > **Important:** this is a safety tool, not a guarantee of a real-world outcome. Treat recipients, delivery channels, the host, and backups as security-critical choices. See [Security](docs/SECURITY.md) and [Threat model](docs/THREAT_MODEL.md) before storing sensitive material.
