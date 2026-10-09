@@ -138,10 +138,10 @@ export async function runSchedulerCycle(
 
 export async function startServer(): Promise<void> {
   const pool = new pg.Pool({ connectionString: requiredEnvironment('DATABASE_URL') });
-  const app = await buildServer(pool);
+  const registry = createConfiguredChannelRegistry(process.env);
+  const app = await buildServer({ pool, channelRegistry: registry });
   let stopping = false;
 
-  const registry = createConfiguredChannelRegistry(process.env);
   const tickIntervalSec = configuredIntegerEnvironment(
     'TICK_INTERVAL_SEC',
     TICK_INTERVAL_SEC_DEFAULT,

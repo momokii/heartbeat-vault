@@ -17,9 +17,11 @@ import { registerBulkCheckInRoutes } from './routes/bulk-check-in.js';
 import { registerTriggerRoutes } from './routes/triggers.js';
 import { registerAuditLogRoutes, registerSwitchAuditRoutes } from './routes/audit-log.js';
 import { registerReportsRoutes } from './routes/reports.js';
+import { createChannelRegistry, type ChannelRegistry } from './channels/types.js';
 
 export type BuildServerOptions = {
   readonly pool: Pool;
+  readonly channelRegistry?: ChannelRegistry;
 };
 
 export async function buildServer(pool: Pool): Promise<FastifyInstance>;
@@ -58,7 +60,11 @@ export async function buildServer(
   await registerUserRoutes(app, pool);
   await registerAdminRoutes(app, pool);
   await registerOpenRegistrationRoute(app, pool);
-  await registerSwitchRoutes(app, pool);
+  const channelRegistry =
+    poolOrOptions !== null && typeof poolOrOptions === 'object' && 'pool' in poolOrOptions
+      ? (poolOrOptions.channelRegistry ?? createChannelRegistry({}))
+      : createChannelRegistry({});
+  await registerSwitchRoutes(app, pool, channelRegistry);
   await registerHeartbeatRoutes(app, pool);
   await registerBulkCheckInRoutes(app, pool);
   await registerTriggerRoutes(app, pool);

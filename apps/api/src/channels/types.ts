@@ -15,6 +15,8 @@ export type DeliveryPayload = {
   readonly switchId: string;
   readonly recipientId: string;
   readonly dryRun?: boolean;
+  readonly testRelease?: boolean;
+  readonly message?: string;
 };
 
 export type DeliveryContext = {

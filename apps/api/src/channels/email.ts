@@ -70,11 +70,14 @@ export function createEmailChannel(config: EmailChannelConfig): DeliveryChannel 
 }
 
 function emailSubject(context: DeliveryContext): string {
+  if (context.payload.testRelease) return '[TEST] Heartbeat Vault release test';
   const prefix = context.payload.dryRun ? '[DRY RUN] ' : '';
   return `${prefix}Heartbeat Vault release ready`;
 }
 
 function emailText(context: DeliveryContext): string {
+  if (context.payload.testRelease)
+    return context.payload.message ?? '[TEST] Heartbeat Vault release test';
   const prefix = context.payload.dryRun ? '[DRY RUN] ' : '';
   return `${prefix}A Heartbeat Vault release is ready.\n\nSwitch: ${context.payload.switchId}\nNotification: ${context.payload.kind}\n\nThis notification contains no release material.`;
 }

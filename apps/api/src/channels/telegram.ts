@@ -57,6 +57,8 @@ function telegramEndpoint(config: TelegramChannelConfig): string {
 }
 
 function telegramText(context: DeliveryContext): string {
+  if (context.payload.testRelease)
+    return context.payload.message ?? '[TEST] Heartbeat Vault release test';
   const prefix = context.payload.dryRun ? '[DRY RUN] ' : '';
   return `${prefix}A Heartbeat Vault release is ready.\nReference: ${context.idempotencyKey}\nThis notification contains no release material.`;
 }

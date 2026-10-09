@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { buildServer } from './server.js';
 import { resetRateLimitForTests } from './lib/rate-limit.js';
 import type { FastifyInstance } from 'fastify';
+import { createChannelRegistry, type DeliveryContext } from './channels/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const POSTGRES_IMAGE = 'postgres:17-alpine';
@@ -24,6 +25,20 @@ const serializedSwitchSchema = z
 let container: StartedPostgreSqlContainer;
 let pool: Pool;
 let app: FastifyInstance;
+const deliveredTests: DeliveryContext[] = [];
+const testRegistry = createChannelRegistry(
+  Object.fromEntries(
+    ['email', 'webhook', 'telegram'].map(channel => [
+      channel,
+      {
+        async send(context: DeliveryContext) {
+          deliveredTests.push(context);
+          return { status: 'sent' as const, receipt: `test:${channel}` };
+        },
+      },
+    ]),
+  ),
+);
 
 async function applyMigrations(p: Pool): Promise<void> {
   const migrationsFolder = join(__dirname, '..', '..', '..', 'packages', 'db', 'drizzle');
@@ -129,7 +144,7 @@ beforeAll(async () => {
   container = await new PostgreSqlContainer(POSTGRES_IMAGE).start();
   pool = new Pool({ connectionString: container.getConnectionUri() });
   await applyMigrations(pool);
-  app = await buildServer(pool);
+  app = await buildServer({ pool, channelRegistry: testRegistry });
 }, 180_000);
 
 afterAll(async () => {
@@ -141,6 +156,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await truncateAll(pool);
   resetRateLimitForTests();
+  deliveredTests.length = 0;
 });
 
 describe('switches CRUD', () => {
@@ -1385,5 +1401,96 @@ describe('audit trail', () => {
     expect(found).toContain('recipient_accepted');
     expect(found).toContain('switch_armed');
     expect(found).toContain('switch_disarmed');
+  });
+});
+
+describe('test release', () => {
+  it('sends a marked message through every configured channel without release state or jobs', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    for (const [channel, address] of [
+      ['webhook', 'https://recipient.example.test/hook'],
+      ['telegram', 'chat-123'],
+    ]) {
+      const created = await app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/recipients`,
+        headers: authCookie(ownerCookie),
+        payload: { channel, address },
+      });
+      const { inviteToken } = JSON.parse(created.body) as { inviteToken: string };
+      const accepted = await app.inject({
+        method: 'POST',
+        url: '/api/recipients/accept',
+        payload: { token: inviteToken },
+      });
+      expect(accepted.statusCode).toBe(200);
+    }
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/test-release`,
+      headers: authCookie(ownerCookie),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(deliveredTests).toHaveLength(3);
+    expect(deliveredTests.every(context => context.idempotencyKey.startsWith('test:'))).toBe(true);
+    expect(deliveredTests.every(context => context.payload.testRelease === true)).toBe(true);
+    expect(deliveredTests.every(context => context.payload.message?.startsWith('[TEST]'))).toBe(
+      true,
+    );
+    const status = await pool.query<{ status: string }>('SELECT status FROM switches WHERE id=$1', [
+      switchId,
+    ]);
+    expect(status.rows[0]!.status).toBe('paused');
+    expect((await pool.query('SELECT id FROM trigger_jobs')).rowCount).toBe(0);
+    expect((await pool.query('SELECT id FROM delivery_jobs')).rowCount).toBe(0);
+    const audit = await pool.query<{ action: string; details: Record<string, unknown> }>(
+      `SELECT action, details FROM audit_log WHERE target=$1`,
+      [switchId],
+    );
+    const testAudit = audit.rows.find(row => row.action === 'test_release_sent');
+    expect(testAudit?.details).toMatchObject({ channelCount: 3 });
+    expect(JSON.stringify(testAudit?.details)).not.toContain('recipient.example.test');
+  });
+
+  it('returns the same 404 shape for unknown and non-owner switches', async () => {
+    const { switchId } = await scaffoldArmed();
+    const otherCookie = await loginAs('other@example.com', 'password-12-chars').catch(() => null);
+    if (otherCookie === null) {
+      await createUser('other@example.com', 'password-12-chars');
+    }
+    const cookie = otherCookie ?? (await loginAs('other@example.com', 'password-12-chars'));
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/test-release`,
+      headers: authCookie(cookie),
+    });
+    const missing = await app.inject({
+      method: 'POST',
+      url: '/api/switches/00000000-0000-4000-8000-000000000000/test-release',
+      headers: authCookie(cookie),
+    });
+    expect(forbidden.statusCode).toBe(404);
+    expect(forbidden.body).toBe(missing.body);
+  });
+
+  it('allows three test releases per switch and rejects the fourth', async () => {
+    const { ownerCookie, switchId } = await scaffoldArmed();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/switches/${switchId}/test-release`,
+        headers: authCookie(ownerCookie),
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    const limited = await app.inject({
+      method: 'POST',
+      url: `/api/switches/${switchId}/test-release`,
+      headers: authCookie(ownerCookie),
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(JSON.parse(limited.body)).toEqual({ error: 'rate_limited' });
   });
 });

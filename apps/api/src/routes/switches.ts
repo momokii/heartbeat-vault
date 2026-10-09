@@ -9,12 +9,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { z } from 'zod';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { encrypt } from '@heartbeat-vault/crypto';
 import { loadTotpKek } from '../lib/kek.js';
 import { writeAudit } from '../lib/audit.js';
 import { createAuthPreHandler } from '../lib/auth-middleware.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import type { ChannelRegistry } from '../channels/types.js';
+import { decryptTotpSecret, verifyTotpCode } from '../lib/totp-store.js';
 
 const SWITCH_KID = 'switch';
 const SWITCH_KEK_VERSION = 1;
@@ -151,7 +153,11 @@ export async function loadSwitchForPause(
   return res.rows[0] ?? null;
 }
 
-export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Promise<void> {
+export async function registerSwitchRoutes(
+  app: FastifyInstance,
+  pool: Pool,
+  channelRegistry: ChannelRegistry,
+): Promise<void> {
   const requireAuth = createAuthPreHandler(pool);
 
   app.post('/api/switches', { preHandler: requireAuth }, async (request, reply) => {
@@ -425,6 +431,142 @@ export async function registerSwitchRoutes(app: FastifyInstance, pool: Pool): Pr
     if (!row) return reply.status(404).send({ error: 'not_found' });
     return reply.status(200).send(serializeSwitch(row));
   });
+
+  app.post(
+    '/api/switches/:id/test-release',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);
+      if (!id.success) return reply.status(404).send({ error: 'not_found' });
+      const user = request.user!;
+      const row = await loadSwitch(pool, id.data, user.id, false);
+      if (!row || row.owner_id !== user.id) return reply.status(404).send({ error: 'not_found' });
+      const parsed = z
+        .object({ totpCode: z.string().min(6).max(8).optional() })
+        .safeParse(request.body ?? {});
+      if (!parsed.success) return reply.status(400).send({ error: 'invalid_request' });
+
+      const limit = checkRateLimit(request.ip, 'test-release', id.data);
+      if (!limit.allowed) {
+        return reply
+          .status(429)
+          .header('retry-after', String(limit.retryAfterSec ?? 60))
+          .send({ error: 'rate_limited' });
+      }
+
+      const totpClient = await pool.connect();
+      try {
+        await totpClient.query('BEGIN');
+        const totpState = await totpClient.query<{
+          totp_verified_at: Date | null;
+          totp_secret_encrypted: Buffer | null;
+          totp_last_counter: string;
+        }>(
+          `SELECT totp_verified_at, totp_secret_encrypted, totp_last_counter
+           FROM users WHERE id=$1 FOR UPDATE`,
+          [user.id],
+        );
+        const totp = totpState.rows[0];
+        if (totp?.totp_verified_at !== null && totp !== undefined) {
+          if (!parsed.data.totpCode || totp.totp_secret_encrypted === null) {
+            await totpClient.query('ROLLBACK');
+            return reply.status(403).send({ error: 'totp_required' });
+          }
+          let secret: string;
+          try {
+            secret = decryptTotpSecret(totp.totp_secret_encrypted);
+          } catch {
+            await totpClient.query('ROLLBACK');
+            return reply.status(500).send({ error: 'internal_error' });
+          }
+          const outcome = await verifyTotpCode(
+            secret,
+            parsed.data.totpCode,
+            Number(totp.totp_last_counter),
+          );
+          if (!outcome.ok) {
+            await totpClient.query('ROLLBACK');
+            return reply.status(403).send({ error: 'totp_required' });
+          }
+          await totpClient.query(`UPDATE users SET totp_last_counter=$1 WHERE id=$2`, [
+            outcome.step,
+            user.id,
+          ]);
+        }
+        await totpClient.query('COMMIT');
+      } catch (err) {
+        await totpClient.query('ROLLBACK');
+        request.log.error(err);
+        return reply.status(500).send({ error: 'internal_error' });
+      } finally {
+        totpClient.release();
+      }
+
+      const recipients = await pool.query<{ id: string; channel: string; address: string }>(
+        `SELECT id, channel, address FROM recipients WHERE switch_id=$1 AND status='accepted'`,
+        [id.data],
+      );
+      const testId = randomUUID();
+      const message = `[TEST] Heartbeat Vault would release "${row.title}" through this channel; no action needed.`;
+      const results: Array<{ readonly channel: string; readonly status: string }> = [];
+      for (const recipient of recipients.rows) {
+        const provider = channelRegistry.get(recipient.channel);
+        let result;
+        if (provider) {
+          try {
+            result = await provider.send({
+              channel: recipient.channel,
+              idempotencyKey: `test:${testId}:${recipient.id}`,
+              address: recipient.address,
+              payload: {
+                kind: 'test_release',
+                switchId: id.data,
+                recipientId: recipient.id,
+                testRelease: true,
+                message,
+              },
+            });
+          } catch (error) {
+            result = {
+              status: 'retry' as const,
+              error: error instanceof Error ? error.message : 'provider failed',
+            };
+          }
+        } else {
+          result = { status: 'dead' as const, error: `unknown channel: ${recipient.channel}` };
+        }
+        results.push({ channel: recipient.channel, status: result.status });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await writeAudit(client, {
+          actorId: user.id,
+          action: 'test_release_sent',
+          target: id.data,
+          ip: request.ip,
+          requestId: request.id,
+          details: {
+            channelCount: results.length,
+            channels: results,
+            successfulChannelCount: results.filter(result => result.status === 'sent').length,
+          },
+        });
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        request.log.error(err);
+        return reply.status(500).send({ error: 'internal_error' });
+      } finally {
+        client.release();
+      }
+
+      const failed = results.some(result => result.status !== 'sent');
+      if (failed) return reply.status(502).send({ error: 'test_delivery_failed' });
+      return reply.status(200).send({ ok: true, channelCount: results.length });
+    },
+  );
 
   app.patch('/api/switches/:id', { preHandler: requireAuth }, async (request, reply) => {
     const id = uuidSchema.safeParse((request.params as Record<string, string>)['id']);

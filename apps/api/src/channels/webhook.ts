@@ -15,6 +15,9 @@ export function createWebhookChannel(config: WebhookChannelConfig): DeliveryChan
         switchId: context.payload.switchId,
         recipientId: context.payload.recipientId,
         dryRun: context.payload.dryRun ?? false,
+        ...(context.payload.testRelease
+          ? { testRelease: true, message: context.payload.message }
+          : {}),
       });
       try {
         const response = await ky.post(context.address, {
