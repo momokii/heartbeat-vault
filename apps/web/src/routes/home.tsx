@@ -38,6 +38,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 });
 type Switch = z.infer<typeof SwitchSchema>;
 type StatusFilter = z.infer<typeof StatusFilterSchema>;
+export type SwitchUrgency = 'overdue' | 'due-soon' | 'ok';
 type DashboardState =
   | { readonly kind: 'loading' }
   | { readonly kind: 'signed-out' }
@@ -52,6 +53,28 @@ type DashboardState =
 function statusLabel(status: string): string {
   return status === 'active' ? 'Active' : status === 'released' ? 'Released' : 'Paused';
 }
+
+export function getSwitchUrgency(
+  { nextDeadline, status }: { readonly nextDeadline: string | null; readonly status: string },
+  now: Date,
+): SwitchUrgency {
+  if (status === 'grace' || status === 'release_pending' || status === 'released') {
+    return 'overdue';
+  }
+  if (!nextDeadline) return 'ok';
+
+  const deadlineTime = new Date(nextDeadline).getTime();
+  const nowTime = now.getTime();
+  if (deadlineTime <= nowTime) return 'overdue';
+  if (deadlineTime <= nowTime + 24 * 60 * 60 * 1000) return 'due-soon';
+  return 'ok';
+}
+
+const urgencyClasses: Record<SwitchUrgency, string> = {
+  overdue: 'text-[var(--color-destructive)]',
+  'due-soon': 'text-amber-600 dark:text-amber-400',
+  ok: '',
+};
 
 function formatDeadline(deadline: string | null): string {
   if (!deadline) return 'No heartbeat deadline set';
@@ -113,6 +136,7 @@ export function HomePage() {
     currentPage * pageSize,
     currentPage * pageSize + pageSize,
   );
+  const urgencyNow = new Date();
 
   return (
     <div className="space-y-8">
@@ -207,38 +231,45 @@ export function HomePage() {
             </Card>
           ) : (
             <section aria-label="Your switches" className="grid gap-4">
-              {pagedSwitches.map(switchItem => (
-                <Card key={switchItem.id}>
-                  <CardHeader className="gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <CardTitle>{switchItem.title}</CardTitle>
-                      <CardDescription>
-                        {switchItem.mode === 'asymmetric_key' ? 'Key release' : 'Direct delivery'} ·{' '}
-                        {switchItem.heartbeatIntervalHours}h interval
-                      </CardDescription>
-                    </div>
-                    <span className="rounded-full border px-2 py-0.5 text-xs font-medium">
-                      {statusLabel(switchItem.status)}
-                    </span>
-                  </CardHeader>
-                  <CardContent className="flex flex-wrap items-start justify-between gap-3 text-sm text-[var(--color-muted-foreground)]">
-                    <div className="space-y-1">
-                      <p>{formatDeadline(switchItem.nextDeadline)}</p>
-                      <p>Created: {dateTimeFormatter.format(new Date(switchItem.createdAt))}</p>
-                      <p>Updated: {dateTimeFormatter.format(new Date(switchItem.updatedAt))}</p>
-                      {state.role === 'admin' && switchItem.ownerEmail ? (
-                        <p>Owner: {switchItem.ownerEmail}</p>
-                      ) : null}
-                    </div>
-                    <Link
-                      to={`/switches/${switchItem.id}`}
-                      className="font-medium text-[var(--color-foreground)] underline underline-offset-4"
-                    >
-                      Manage switch
-                    </Link>
-                  </CardContent>
-                </Card>
-              ))}
+              {pagedSwitches.map(switchItem => {
+                const urgency = getSwitchUrgency(switchItem, urgencyNow);
+                return (
+                  <Card key={switchItem.id}>
+                    <CardHeader className="gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <CardTitle>{switchItem.title}</CardTitle>
+                        <CardDescription>
+                          {switchItem.mode === 'asymmetric_key' ? 'Key release' : 'Direct delivery'}{' '}
+                          · {switchItem.heartbeatIntervalHours}h interval
+                        </CardDescription>
+                      </div>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-xs font-medium ${urgencyClasses[urgency]}`}
+                      >
+                        {statusLabel(switchItem.status)}
+                      </span>
+                    </CardHeader>
+                    <CardContent className="flex flex-wrap items-start justify-between gap-3 text-sm text-[var(--color-muted-foreground)]">
+                      <div className="space-y-1">
+                        <p className={urgencyClasses[urgency]}>
+                          {formatDeadline(switchItem.nextDeadline)}
+                        </p>
+                        <p>Created: {dateTimeFormatter.format(new Date(switchItem.createdAt))}</p>
+                        <p>Updated: {dateTimeFormatter.format(new Date(switchItem.updatedAt))}</p>
+                        {state.role === 'admin' && switchItem.ownerEmail ? (
+                          <p>Owner: {switchItem.ownerEmail}</p>
+                        ) : null}
+                      </div>
+                      <Link
+                        to={`/switches/${switchItem.id}`}
+                        className="font-medium text-[var(--color-foreground)] underline underline-offset-4"
+                      >
+                        Manage switch
+                      </Link>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </section>
           )}
           <ListPagination

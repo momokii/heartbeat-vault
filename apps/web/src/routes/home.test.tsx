@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { HomePage } from './home';
+import { getSwitchUrgency, HomePage } from './home';
 
 const user = {
   id: '4fdb52d6-31dd-4e7d-aedb-e7f694468f4a',
@@ -79,6 +79,42 @@ function renderPage(): void {
 describe('HomePage', () => {
   afterEach(() => vi.restoreAllMocks());
 
+  describe('getSwitchUrgency', () => {
+    const now = new Date('2026-01-10T00:00:00.000Z');
+
+    it('returns calm for a switch without a deadline', () => {
+      expect(getSwitchUrgency({ nextDeadline: null, status: 'active' }, now)).toBe('ok');
+    });
+
+    it('treats the exact deadline as overdue', () => {
+      expect(
+        getSwitchUrgency({ nextDeadline: '2026-01-10T00:00:00.000Z', status: 'active' }, now),
+      ).toBe('overdue');
+    });
+
+    it('marks a deadline 23 hours and 59 minutes away as due soon', () => {
+      expect(
+        getSwitchUrgency({ nextDeadline: '2026-01-10T23:59:00.000Z', status: 'active' }, now),
+      ).toBe('due-soon');
+    });
+
+    it('keeps a deadline more than 24 hours away calm', () => {
+      expect(
+        getSwitchUrgency({ nextDeadline: '2026-01-11T00:01:00.000Z', status: 'active' }, now),
+      ).toBe('ok');
+    });
+
+    it('marks a past deadline as overdue', () => {
+      expect(
+        getSwitchUrgency({ nextDeadline: '2026-01-09T23:59:00.000Z', status: 'active' }, now),
+      ).toBe('overdue');
+    });
+
+    it('marks a released switch as overdue without a deadline', () => {
+      expect(getSwitchUrgency({ nextDeadline: null, status: 'released' }, now)).toBe('overdue');
+    });
+  });
+
   it('renders created and updated timestamps for loaded switches', async () => {
     mockDashboard();
     renderPage();
@@ -87,6 +123,22 @@ describe('HomePage', () => {
 
     expect(screen.getAllByText(/Created:/)).toHaveLength(switches.length);
     expect(screen.getAllByText(/Updated:/)).toHaveLength(switches.length);
+  });
+
+  it('renders overdue switches with the urgent treatment while preserving deadline text', async () => {
+    const overdueSwitch = switches.find(item => item.title === 'Family plan');
+    if (!overdueSwitch) throw new Error('Overdue switch fixture is unavailable');
+    mockDashboard([overdueSwitch]);
+    renderPage();
+
+    await screen.findByText('Family plan');
+
+    const deadline = screen.getByText(/Next check-in:/);
+    expect(deadline).toHaveTextContent('Next check-in:');
+    expect(deadline).toHaveClass('text-[var(--color-destructive)]');
+    const badge = screen.getAllByText('Active').find(element => element.tagName === 'SPAN');
+    if (!badge) throw new Error('Status badge is unavailable');
+    expect(badge).toHaveClass('text-[var(--color-destructive)]');
   });
 
   it('filters loaded switches by case-insensitive title text without another request', async () => {
