@@ -203,6 +203,12 @@
 - [x] CI gate green on live runs; CodeQL green.
 - [ ] Release-please action step still red after checkout/config/fetch-depth fixes; likely repository Actions token permissions — requires owner GitHub access (Settings → Actions → General → Workflow permissions).
 
+## Wave 3e: Pause-only trusted delegates — DONE
+
+- [x] Per-switch `switch_delegations` records (migration `0012_switch_delegations`) allow an owner to grant or revoke a registered user.
+- [x] Delegates can only use disarm and pre-fire cancel; payload, recipients, settings, trigger configuration, check-in, switch reads, and all other owner operations retain 404-shaped denial.
+- [x] Delegate mutations include the authenticated actor and delegation ID in the tamper-evident audit trail; revocation immediately removes access. Backend API coverage uses Testcontainers PostgreSQL.
+
 ## Key decisions
 
 - 2026-09-20 (user answers): deployment = single-household, one host, documented HA path; channels v1 = Email + Webhook + Telegram (Matrix/SFTP deferred); CI = GitHub Actions + GHCR; UI/docs = English only; license = permissive MIT/Apache-2.0 family (exact pick pending); threat priority = stolen-data-at-rest first (full STRIDE + ASVS map still required); release model = server-side automatic release for v1; hardened profile = NOT in v1 — standard-only v1, hardened (Vault vs OpenBao) deferred to next-development todo with ADRs.
