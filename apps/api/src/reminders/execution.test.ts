@@ -250,7 +250,8 @@ describe('owner reminder delivery worker', () => {
     );
     const send = vi.fn().mockResolvedValue({
       status: 'retry',
-      error: `smtp\n${'x'.repeat(600)}`,
+      error:
+        'smtp://mail.example.test failed for owner@example.com token abcdef0123456789abcdef0123456789. DETAIL: Key (email)=(owner@example.com) already exists',
     });
 
     const summary = await deliverPendingOwnerReminders(pool, send, 'worker-1', FIXED_NOW);
@@ -267,7 +268,8 @@ describe('owner reminder delivery worker', () => {
     expect(retryState.rows[0]).toMatchObject({
       state: 'pending',
       attempts: 1,
-      last_error: `smtp ${'x'.repeat(495)}`,
+      last_error:
+        'smtp://[redacted] failed for [redacted-email] token [redacted-token]. DETAIL: [redacted]',
     });
     expect(retryState.rows[0]?.next_attempt_at.toISOString()).toBe('2026-10-01T00:01:00.000Z');
     const audit = await pool.query<{ readonly action: string }>(
@@ -279,7 +281,9 @@ describe('owner reminder delivery worker', () => {
       `SELECT details FROM audit_log WHERE target = $1 AND action = 'reminder_failed'`,
       [job.idempotencyKey],
     );
-    expect(auditDetails.rows[0]?.details.error).toBe(`smtp ${'x'.repeat(495)}`);
+    expect(auditDetails.rows[0]?.details.error).toBe(
+      'smtp://[redacted] failed for [redacted-email] token [redacted-token]. DETAIL: [redacted]',
+    );
   });
 
   it('records a bounded failure when the provider never resolves', async () => {

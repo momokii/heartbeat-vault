@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { withReminderDeadline } from './reminders/index.js';
 
 const mocks = vi.hoisted(() => ({
   checkClockSkew: vi.fn(),
@@ -39,10 +40,11 @@ vi.mock('./reminders/delivery.js', () => ({
 vi.mock('./channels/registry.js', () => ({
   createConfiguredChannelRegistry: mocks.createConfiguredChannelRegistry,
 }));
-vi.mock('./reminders/index.js', () => ({
-  materializeOwnerReminder: mocks.materializeOwnerReminder,
-  sanitizeReminderError: mocks.sanitizeReminderError,
-}));
+vi.mock('./reminders/index.js', async () => {
+  const actual =
+    await vi.importActual<typeof import('./reminders/index.js')>('./reminders/index.js');
+  return { ...actual, materializeOwnerReminder: mocks.materializeOwnerReminder };
+});
 
 const FIXED_NOW = new Date('2026-10-01T00:00:00.000Z');
 const SWITCH_ID = '22222222-2222-4222-8222-222222222222';
@@ -97,10 +99,10 @@ describe('scheduler owner reminders', () => {
     await pool.end();
   });
 
-  it('keeps lease reaping and release processing alive when reminder delivery times out', async () => {
+  it('keeps lease reaping and release processing alive when the email provider hangs', async () => {
     const { runSchedulerCycle } = await import('./main.js');
     const pool = new Pool();
-    const emailChannel = { send: vi.fn() };
+    const emailChannel = { send: vi.fn().mockImplementation(() => new Promise(() => undefined)) };
     const registry = { get: vi.fn().mockReturnValue(emailChannel), names: ['email'] };
     const query = vi.spyOn(pool, 'query').mockImplementation(() =>
       Promise.resolve({
@@ -126,14 +128,49 @@ describe('scheduler owner reminders', () => {
     mocks.reapExpiredLeases.mockResolvedValue(0);
     mocks.claimJob.mockResolvedValueOnce(releaseJob).mockResolvedValueOnce(null);
     mocks.processJob.mockResolvedValue(undefined);
-    mocks.createReminderEmailSender.mockReturnValue(vi.fn());
-    mocks.deliverPendingOwnerReminders.mockResolvedValue({ sent: 0, failed: 1 });
+    mocks.createReminderEmailSender.mockReturnValue(
+      async (message: {
+        readonly to: string;
+        readonly switchId: string;
+        readonly subject: string;
+        readonly text: string;
+        readonly idempotencyKey: string;
+      }) => {
+        await emailChannel.send({
+          channel: 'email',
+          idempotencyKey: message.idempotencyKey,
+          address: message.to,
+          payload: {
+            kind: 'reminder',
+            switchId: message.switchId,
+            recipientId: message.to,
+          },
+        });
+        return { status: 'sent', receipt: 'unreachable' };
+      },
+    );
+    mocks.deliverPendingOwnerReminders.mockImplementation(async (_pool, sendEmail) => {
+      await withReminderDeadline(
+        sendEmail({
+          to: 'owner@example.test',
+          switchId: SWITCH_ID,
+          subject: 'reminder',
+          text: 'reminder',
+          idempotencyKey: 'reminder-key',
+        }),
+        { status: 'retry', error: 'reminder provider deadline exceeded' },
+      );
+      return { sent: 0, failed: 1 };
+    });
     mocks.deliverPendingDeliveries.mockResolvedValue({ sent: 0, retried: 0, dead: 0 });
     mocks.materializeOwnerReminder.mockResolvedValue(undefined);
     vi.useFakeTimers();
     vi.setSystemTime(FIXED_NOW);
 
-    await runSchedulerCycle(pool, registry, 'worker-1', 60, 5_000);
+    const cycle = runSchedulerCycle(pool, registry, 'worker-1', 60, 5_000);
+    await vi.waitFor(() => expect(emailChannel.send).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(30_000);
+    await cycle;
 
     expect(mocks.reapExpiredLeases).toHaveBeenCalledWith(pool, expect.any(Date));
     expect(mocks.processJob).toHaveBeenCalledWith(pool, releaseJob, 'worker-1');
@@ -144,6 +181,37 @@ describe('scheduler owner reminders', () => {
       expect.any(Date),
     );
     expect(query).toHaveBeenCalled();
+    await pool.end();
+  });
+
+  it('redacts scheduler delivery errors before writing them to stderr', async () => {
+    const { runSchedulerCycle } = await import('./main.js');
+    const pool = new Pool();
+    const registry = { get: vi.fn().mockReturnValue({ send: vi.fn() }), names: ['email'] };
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    mocks.checkClockSkew.mockResolvedValue({ uncertain: false, skewMs: 0 });
+    mocks.runSchedulerTick.mockResolvedValue(0);
+    mocks.materializeOwnerReminder.mockResolvedValue(undefined);
+    mocks.deliverPendingOwnerReminders.mockRejectedValue(
+      new Error(
+        'switch 22222222-2222-4222-8222-222222222222: smtp://mail.example.test failed for owner@example.com token abcdef0123456789abcdef0123456789. DETAIL: Key (email)=(owner@example.com) already exists',
+      ),
+    );
+    mocks.reapExpiredLeases.mockResolvedValue(0);
+    mocks.claimJob.mockResolvedValue(null);
+    mocks.deliverPendingDeliveries.mockResolvedValue({ sent: 0, retried: 0, dead: 0 });
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+
+    await runSchedulerCycle(pool, registry, 'worker-1', 60, 5_000);
+
+    const output = stderr.mock.calls.map(([value]) => String(value)).join('');
+    expect(output).toContain('switch 22222222-2222-4222-8222-222222222222');
+    expect(output).not.toContain('owner@example.com');
+    expect(output).not.toContain('mail.example.test');
+    expect(output).not.toContain('abcdef0123456789abcdef0123456789');
+    expect(output).not.toContain('DETAIL: Key');
+    stderr.mockRestore();
     await pool.end();
   });
 });

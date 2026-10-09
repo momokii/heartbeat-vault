@@ -10,8 +10,33 @@ export function sanitizeReminderError(error: unknown): string {
   const printable = Array.from(message, character => {
     const code = character.codePointAt(0) ?? 0;
     return code <= 31 || (code >= 127 && code <= 159) ? ' ' : character;
-  }).join('');
-  return printable.replace(/\s+/g, ' ').trim().slice(0, 500);
+  })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const withoutSqlDetails = printable.replace(/\bDETAIL:\s*.*/i, 'DETAIL: [redacted]');
+  const withoutEmails = withoutSqlDetails.replace(
+    /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+    '[redacted-email]',
+  );
+  const withoutHosts = withoutEmails
+    .replace(/\b(?:https?:\/\/|smtp:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?\b/gi, match =>
+      match.includes('://')
+        ? `${match.slice(0, match.indexOf('://') + 3)}[redacted]`
+        : '[redacted]',
+    )
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[redacted-ip]');
+  const withoutTokens = withoutHosts.replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, match =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(match)
+      ? match
+      : '[redacted-token]',
+  );
+  return withoutTokens
+    .replace(
+      /\b(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|VALUES|RETURNING)\b.*$/i,
+      '[redacted-sql]',
+    )
+    .slice(0, 500);
 }
 
 export async function withReminderDeadline<T, U>(

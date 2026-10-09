@@ -163,9 +163,7 @@ export async function startServer(): Promise<void> {
     timer = setTimeout(() => {
       inFlight = runSchedulerCycle(pool, registry, workerId, tickIntervalSec, clockSkewBudgetMs)
         .catch((error: unknown) => {
-          process.stderr.write(
-            `scheduler tick failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
-          );
+          process.stderr.write(`scheduler tick failed: ${sanitizeReminderError(error)}\n`);
         })
         .finally(() => {
           scheduleNextTick();
