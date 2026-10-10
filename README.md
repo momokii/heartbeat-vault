@@ -72,7 +72,7 @@ For channel-specific security guidance, see [Delivery channels](docs/DELIVERY_CH
 ## Everyday workflows
 
 - **Check in, once for everything.** The dashboard has a _Check in all_ button that checks in every active switch you own in one go, with per-switch results. Owners with two-factor authentication confirm with an authenticator code.
-- **Get reminded before deadlines.** Every active switch sends you an email nudge as its deadline approaches and again in the warning window, so a busy day doesn't become an accidental release. Reminder sends and failures appear in the activity log.
+- **Get reminded during grace.** Every active switch emails you a reminder when its deadline passes and again at the quarter-interval warning point, so a busy day doesn't have to wait for a full grace lapse before you notice. Reminder sends and failures appear in the activity log.
 - **Name a trusted delegate.** On a switch's detail page you can grant another registered user pause-only access by email. Delegates can pause the switch or cancel a pending release — nothing else — and every delegate action is recorded under their name. Revoking is immediate.
 - **Duplicate a switch as a template.** Copy a switch's configuration (interval, grace, delivery mode, trigger setup) into a new paused switch. Payload, recipients, tokens, and history are never copied.
 - **See urgency at a glance.** The dashboard marks switches overdue, due within 24 hours, or calm.

@@ -18,7 +18,7 @@
 
 ## Non-negotiable rules
 
-- Phase 0 gate: NO implementation before the user approves the design document.
+- Phase 0 gate: the design document's formal approval was never separately recorded; implementation proceeded under explicit user direction (see `docs/PROGRESS.md` Open issues — do not fabricate an approval event). Treat `docs/BRIEF.md` plus current user direction as the authority for new work.
 - Never invent custom crypto. Audited primitives/libraries only (AEAD: AES-256-GCM or XChaCha20-Poly1305; KDF: Argon2id; asymmetric: X25519 / age / libsodium sealed boxes; sharing: Shamir).
 - Never commit secrets; never log sensitive data; never run destructive commands outside the project directory.
 - Conventional Commits (`<type>(<scope>): <subject>`), one logical change per commit. Never commit without explicit user request (per `.claude/AGENT_RULES.md`).
@@ -26,21 +26,21 @@
 - Do not mention the background inspiration (person/post) anywhere in code, docs, or commits.
 - Correctness over speed. Never fake/stub security-critical behavior — say explicitly what is unfinished or unverifiable.
 
-## Architecture (pending Phase 0 approval — do not treat as decided)
+## Architecture (shipped: standard profile v1)
 
-- Proposed default: TypeScript monorepo (pnpm + Turborepo), typed API backend, React + Tailwind + shadcn/ui, type-safe ORM + migrations, Postgres-backed job queue. Every significant choice gets an ADR in `docs/adr/`.
+- Shipped: TypeScript monorepo (pnpm + Turborepo), Fastify typed API backend, React + Tailwind + shadcn/ui, Drizzle ORM + migrations, Postgres-backed durable job queue, Caddy reverse proxy. Every significant choice gets an ADR in `docs/adr/`.
 - Hard requirements: PostgreSQL primary DB, monorepo (or justified alternative), everything Docker-based.
 - Profiles: `standard` (app + Postgres + reverse proxy) vs `hardened` (+ Vault/OpenBao etc. via Compose profiles). Hardened must never become a release-path SPOF.
 
 ## Common commands
 
-| Purpose         | Command                                                                      |
-| --------------- | ---------------------------------------------------------------------------- |
-| Env setup       | `cp .env.example .env` (never commit `.env`)                                 |
-| Health check    | TBD (record real command in `.claude/ENVIRONMENT_GUIDE.md` once stack lands) |
-| Tests           | TBD (single-command runner; record once known)                               |
-| Verify security | `scripts/verify-security.sh` (Phase 9; also make/CLI target)                 |
-| Install         | `./install.sh` (Phase 10; idempotent, standard/hardened choice)              |
+| Purpose         | Command                                                                       |
+| --------------- | ----------------------------------------------------------------------------- |
+| Env setup       | `cp .env.example .env` (never commit `.env`)                                  |
+| Health check    | `curl -s http://127.0.0.1:18080/api/health` (dev) or `./install.sh status`    |
+| Tests           | `pnpm test` (or per-package: `pnpm --filter @heartbeat-vault/api test`)       |
+| Verify security | `scripts/verify-security.sh` (`--json` for machine output)                    |
+| Install         | `./install.sh install` (idempotent; standard profile only, hardened deferred) |
 
 ## Testing instructions
 
