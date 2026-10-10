@@ -31,11 +31,11 @@ The workspace uses pnpm and Turborepo. PostgreSQL is both the system of record a
 
 ## Data and job flow
 
-PostgreSQL stores users, sessions, invites, recipients, switches, sealed payloads, heartbeats, durable waits, trigger jobs, delivery jobs, dead-letter jobs, scheduler heartbeats, audit events, and application configuration. Timestamps are UTC and the database clock is authoritative for scheduler decisions.
+PostgreSQL stores users, sessions, invites, recipients, switches, sealed payloads, heartbeats, durable waits, trigger jobs, delivery jobs, dead-letter jobs, scheduler heartbeats, audit events, reminder jobs, export records, switch delegations, and application configuration. Timestamps are UTC and the database clock is authoritative for scheduler decisions.
 
 The API stores a payload only after encrypting it. It writes the encrypted envelope fields—not plaintext—to `sealed_payloads`. A switch cannot arm unless it has a stored payload and at least one accepted recipient. Arming records the heartbeat start and next deadline transactionally.
 
-The scheduler runs in the API process. Its recovery and dispatch path promotes overdue durable waits, materializes due trigger work, reclaims expired leases, claims work with PostgreSQL locking, processes it idempotently, and dispatches delivery work. Retry attempts use backoff and terminal failures move to the dead-letter queue rather than disappearing. The scheduler records a heartbeat so a restart can recognize downtime and extend affected timers rather than releasing during an uncertainty window.
+The scheduler runs in the API process. Its recovery and dispatch path promotes overdue durable waits, materializes due trigger work, reclaims expired leases, claims work with PostgreSQL locking, processes it idempotently, and dispatches delivery work. The same tick also materializes owner deadline reminders and dispatches reminder email through the delivery channels, isolated from release processing so reminder failures can never block or trigger a release. Retry attempts use backoff and terminal failures move to the dead-letter queue rather than disappearing. The scheduler records a heartbeat so a restart can recognize downtime and extend affected timers rather than releasing during an uncertainty window.
 
 This is deliberately fail-safe: database failure, clock uncertainty, or recovery after downtime holds delivery rather than releasing immediately. A per-switch `fail_deadly` policy exists only with typed confirmation at arming; its operational implications are documented in [SECURITY.md](SECURITY.md).
 
