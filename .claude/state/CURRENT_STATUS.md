@@ -21,7 +21,7 @@ Standard-profile v1 implementation complete and deployed. Ultrawork loop deliver
 
 ## Blocked
 
-- CI failure logs + Actions token-permission check require owner GitHub access (TASK-005).
+- Release-please token-permission check requires owner GitHub access (TASK-005).
 
 ## Open Questions (require user decisions)
 
