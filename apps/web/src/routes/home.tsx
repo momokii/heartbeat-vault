@@ -233,6 +233,12 @@ export function HomePage() {
             <section aria-label="Your switches" className="grid gap-4">
               {pagedSwitches.map(switchItem => {
                 const urgency = getSwitchUrgency(switchItem, urgencyNow);
+                const urgent = switchItem.status === 'active' && urgency !== 'ok';
+                const badgeLabel = urgent
+                  ? urgency === 'overdue'
+                    ? 'Overdue'
+                    : 'Due soon'
+                  : statusLabel(switchItem.status);
                 return (
                   <Card key={switchItem.id}>
                     <CardHeader className="gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -244,9 +250,9 @@ export function HomePage() {
                         </CardDescription>
                       </div>
                       <span
-                        className={`rounded-full border px-2 py-0.5 text-xs font-medium ${urgencyClasses[urgency]}`}
+                        className={`rounded-full border px-2 py-0.5 text-xs font-medium ${urgent ? urgencyClasses[urgency] : ''}`}
                       >
-                        {statusLabel(switchItem.status)}
+                        {badgeLabel}
                       </span>
                     </CardHeader>
                     <CardContent className="flex flex-wrap items-start justify-between gap-3 text-sm text-[var(--color-muted-foreground)]">

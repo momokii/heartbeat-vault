@@ -136,9 +136,21 @@ describe('HomePage', () => {
     const deadline = screen.getByText(/Next check-in:/);
     expect(deadline).toHaveTextContent('Next check-in:');
     expect(deadline).toHaveClass('text-[var(--color-destructive)]');
-    const badge = screen.getAllByText('Active').find(element => element.tagName === 'SPAN');
-    if (!badge) throw new Error('Status badge is unavailable');
+    const badge = screen.getByText('Overdue');
+    expect(badge.tagName).toBe('SPAN');
     expect(badge).toHaveClass('text-[var(--color-destructive)]');
+  });
+
+  it('keeps terminal status badges instead of urgency labels', async () => {
+    const released = switches.find(item => item.title === 'Released archive');
+    if (!released) throw new Error('Released switch fixture is unavailable');
+    mockDashboard([released]);
+    renderPage();
+
+    await screen.findByText('Released archive');
+
+    expect(screen.getByText('Released', { selector: 'span' })).toBeVisible();
+    expect(screen.queryByText('Overdue')).not.toBeInTheDocument();
   });
 
   it('filters loaded switches by case-insensitive title text without another request', async () => {
