@@ -69,6 +69,16 @@ The default LAN profile exposes Caddy at loopback ports `18080` and `18443`; val
 
 For channel-specific security guidance, see [Delivery channels](docs/DELIVERY_CHANNELS.md). Email, webhooks, and Telegram should not be considered confidential payload storage; an encrypted blob plus separately communicated key material is safer where confidentiality matters.
 
+## Everyday workflows
+
+- **Check in, once for everything.** The dashboard has a _Check in all_ button that checks in every active switch you own in one go, with per-switch results. Owners with two-factor authentication confirm with an authenticator code.
+- **Get reminded before deadlines.** Every active switch sends you an email nudge as its deadline approaches and again in the warning window, so a busy day doesn't become an accidental release. Reminder sends and failures appear in the activity log.
+- **Name a trusted delegate.** On a switch's detail page you can grant another registered user pause-only access by email. Delegates can pause the switch or cancel a pending release — nothing else — and every delegate action is recorded under their name. Revoking is immediate.
+- **Duplicate a switch as a template.** Copy a switch's configuration (interval, grace, delivery mode, trigger setup) into a new paused switch. Payload, recipients, tokens, and history are never copied.
+- **See urgency at a glance.** The dashboard marks switches overdue, due within 24 hours, or calm.
+- **Test a release safely.** _Send test release_ delivers a clearly-marked `[TEST]` message through every configured channel without arming, releasing, or changing anything. Rate-limited per switch.
+- **Review everything.** Administrators get an activity log (searchable, filterable by category and date, with per-switch history) and a reports page listing every audit export — who ran it, what it covered, and whether it succeeded. Exports support CSV/JSON, category and date filters with shortcuts (Today, Yesterday, This week, This month), and 5–50 rows per page on every list.
+
 ## Configuration and deployment profiles
 
 Copying `.env.example` manually is supported, but `./install.sh install` is safer because it creates real values for known placeholders and applies restrictive permissions.
