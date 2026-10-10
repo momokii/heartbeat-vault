@@ -51,8 +51,12 @@ jobs:
   tests:
     # Per-package suites run as separate jobs so a failure names its package
     # in the public checks list (the combined step hid which suite failed).
+    # JUnit reports annotate failing tests on the commit for the same reason.
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      checks: write
     strategy:
       fail-fast: false
       matrix:
@@ -76,8 +80,23 @@ jobs:
         if: matrix.package == 'e2e'
         run: pnpm --filter @heartbeat-vault/e2e exec playwright install --with-deps chromium
 
-      - name: Test ${{ matrix.package }}
-        run: pnpm --filter @heartbeat-vault/${{ matrix.package }} test
+      - name: Test ${{ matrix.package }} (vitest)
+        if: matrix.package != 'e2e'
+        run: pnpm --filter @heartbeat-vault/${{ matrix.package }} test -- --reporter=default --reporter=junit --outputFile=test-results/junit.xml
+
+      - name: Test e2e (playwright)
+        if: matrix.package == 'e2e'
+        run: pnpm --filter @heartbeat-vault/e2e test -- --reporter=junit
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/junit.xml
+
+      - name: Annotate test results
+        if: always()
+        uses: mikepenz/action-junit-report@v5
+        with:
+          check_name: tests-${{ matrix.package }}
+          report_paths: '**/test-results/junit.xml'
+          fail_on_failure: false
 
   secrets:
     runs-on: ubuntu-latest
