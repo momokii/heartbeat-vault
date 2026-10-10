@@ -204,12 +204,20 @@
 - [x] CI gate green on live runs; CodeQL green.
 - [ ] Release-please action step still red after checkout/config/fetch-depth fixes; likely repository Actions token permissions — requires owner GitHub access (Settings → Actions → General → Workflow permissions).
 
-## Wave 3e: Delegates, duplication, urgency, test release — DONE (ultrawork loop)
+## Wave 3e: Delegates, duplication, urgency, test release — DONE, DEPLOYED, Oracle-verified (ultrawork loop)
 
 - [x] Pause-only trusted delegates (per-switch grants by email with fail-closed ambiguity handling, owner-only list/revoke, immediate revocation, released-cancellation blocked for all roles); delegate management UI on switch detail. Oracle-verified.
 - [x] Duplicate-as-template (configuration-only copy into a new paused switch) with dashboard/detail UI.
 - [x] Deadline urgency display on the dashboard (overdue / due-soon / calm).
 - [x] Test-release dry run (marked test messages through configured channels, rate-limited, TOTP-gated, no release-state mutation) with UI trigger. Oracle-verified.
+- [x] Deployed live (migrations applied, bundle hash-verified); verifier 19–20 PASS with only pre-existing warnings.
+
+## Wave 3f: CI observability and hardening — PARTIAL (blocked on CI log access)
+
+- [x] Split tests into per-package matrix jobs so failures name their package publicly; added JUnit reporting with check annotations for the same reason.
+- [x] Fixed everything diagnosable without logs: phantom workspace dep (CI typecheck/build green since), Caddy smoke MASTER_KEY + preview URL, audit ignores, two timing-flaky web tests hardened with retries (assertions unchanged).
+- [x] Eliminated as causes (all verified): frozen-lockfile sync, Node skew (pristine ubuntu:24.04 + node:22 replica), audit gate, `CI=true` unhandled-rejection mode, CPU-constrained runs, Vitest-level issues (full suites green repeatedly: API 221, web 118, crypto 64, DB 16, e2e journey).
+- [ ] Gate Tests step (api package, fails ~76–97s in) and caddy-smoke job fail intermittently on GitHub runners with no public logs; release-please action step red. All three need owner GitHub access: failing step logs (Actions → run → failed job) or Settings → Actions → General → Workflow permissions (read-only token would explain release-please).
 
 ## Wave 3e: Pause-only trusted delegates — DONE
 
