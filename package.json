@@ -1,7 +1,7 @@
 {
   "name": "heartbeat-vault",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Heartbeat Vault — self-hosted dead man's switch (monorepo root)",
   "packageManager": "pnpm@9.15.9",
   "engines": {
