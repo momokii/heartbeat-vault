@@ -80,6 +80,9 @@ jobs:
         if: matrix.package == 'e2e'
         run: pnpm --filter @heartbeat-vault/e2e exec playwright install --with-deps chromium
 
+      - name: Build package and workspace dependencies
+        run: pnpm --filter @heartbeat-vault/${{ matrix.package }}... build
+
       - name: Test ${{ matrix.package }} (vitest)
         if: matrix.package != 'e2e'
         run: pnpm --filter @heartbeat-vault/${{ matrix.package }} test -- --reporter=default --reporter=junit --outputFile=test-results/junit.xml
