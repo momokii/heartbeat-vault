@@ -38,5 +38,5 @@ Standard-profile v1 implementation complete and deployed. Ultrawork loop deliver
 
 ## Last Updated
 
-- Ultrawork loop session: all waves implemented, Oracle-verified, deployed, and pushed; CI green except api-job (needs owner logs) and release-please (needs owner token check); workspace cleaned.
+- Ultrawork loop session: all waves implemented, Oracle-verified, deployed, and pushed; CI fully green except release-please (needs owner token check); workspace cleaned.
   [Agent must update this timestamp and append a session summary after every session.]
