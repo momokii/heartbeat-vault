@@ -45,11 +45,39 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Tests (unit, integration, crypto, E2E)
-        run: pnpm test
-
       - name: Dependency audit (fails on new advisories; known dev-only set ignored via pnpm.auditConfig)
         run: pnpm audit --audit-level=low
+
+  tests:
+    # Per-package suites run as separate jobs so a failure names its package
+    # in the public checks list (the combined step hid which suite failed).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [api, web, crypto, db, e2e]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright chromium (E2E only)
+        if: matrix.package == 'e2e'
+        run: pnpm --filter @heartbeat-vault/e2e exec playwright install --with-deps chromium
+
+      - name: Test ${{ matrix.package }}
+        run: pnpm --filter @heartbeat-vault/${{ matrix.package }} test
 
   secrets:
     runs-on: ubuntu-latest
