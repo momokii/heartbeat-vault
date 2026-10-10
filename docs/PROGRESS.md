@@ -175,11 +175,12 @@
 
 ## Maintenance sweep — IN PROGRESS (dependencies, docs/state refresh, GHSA review)
 
-## Wave 2h: CI failure diagnosis — DONE (gate green; release-please needs owner action)
+## Wave 2h: CI failure diagnosis — PARTIAL (typecheck + smoke fixed and green; Tests step still red on CI)
 
-- [x] Live CI showed gate failing at Typecheck plus release-please failing. Reproduced in a pristine container: `@heartbeat-vault/e2e` imported `../../db/dist/*` without declaring the workspace dependency, so turbo's `^build` ordering never built it — a phantom dependency masked locally by stale `dist/`. Fixed by declaring `@heartbeat-vault/db: workspace:*`; verified by deleting `dist/` and watching turbo rebuild it.
-- [x] Caddy smoke fixed (valid `MASTER_KEY` + `CADDY_BASE_URL` wired to the preview port) — job now green, proven locally and in CI.
-- [x] CI gate green on live runs; CodeQL green. Remaining red: release-please action step (checkout added, redundant input removed, config dry-run validated, full history fetched) — needs the repository Actions token-permission/log check below, which requires owner GitHub access.
+- [x] Live CI showed gate failing at Typecheck plus release-please failing. Reproduced the typecheck failure in a pristine container: `@heartbeat-vault/e2e` imported `../../db/dist/*` without declaring the workspace dependency, so turbo's `^build` ordering never built it — a phantom dependency masked locally by stale `dist/`. Fixed by declaring `@heartbeat-vault/db: workspace:*`; verified by deleting `dist/` and watching turbo rebuild it. CI Typecheck/Build/Format/Lint now pass.
+- [x] Caddy smoke fixed (valid `MASTER_KEY` + `CADDY_BASE_URL` wired to the preview port) — job green on live runs; proven locally end-to-end repeatedly (exit 0, 3/3 checks, zero leftover containers).
+- [x] Eliminated as causes (all verified): audit gate (now exits 0), frozen-lockfile sync, Node version skew (replica used same toolchain), unhandled-rejection CI-mode difference (`CI=true pnpm test` green locally), CPU-constrained runs green, pristine-container unit/integration green.
+- [ ] Gate Tests step still fails ~24s in on CI while the identical tree passes full suites locally (8/8 tasks, incl. CPU-constrained and `CI=true` runs). Web timing flakes hardened with retries (assertions unchanged). Root cause not determinable without step logs — public API exposes conclusions only. Needs owner-provided CI logs or Actions settings review.
 
 ## Wave 3a: Encrypted backup and isolated restore — DONE (ultrawork loop)
 
