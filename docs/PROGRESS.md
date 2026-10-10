@@ -175,7 +175,7 @@
 
 ## Maintenance sweep — IN PROGRESS (dependencies, docs/state refresh, GHSA review)
 
-## Wave 2h: CI failure diagnosis — PARTIAL (typecheck + smoke fixed and green; Tests step still red on CI)
+## Wave 2h: CI failure diagnosis — SUPERSEDED by Wave 3f below (initial diagnosis; final root cause and fix recorded there)
 
 - [x] Live CI showed gate failing at Typecheck plus release-please failing. Reproduced the typecheck failure in a pristine container: `@heartbeat-vault/e2e` imported `../../db/dist/*` without declaring the workspace dependency, so turbo's `^build` ordering never built it — a phantom dependency masked locally by stale `dist/`. Fixed by declaring `@heartbeat-vault/db: workspace:*`; verified by deleting `dist/` and watching turbo rebuild it. CI Typecheck/Build/Format/Lint now pass.
 - [x] Caddy smoke fixed (valid `MASTER_KEY` + `CADDY_BASE_URL` wired to the preview port) — job green on live runs; proven locally end-to-end repeatedly (exit 0, 3/3 checks, zero leftover containers).

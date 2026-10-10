@@ -56,7 +56,7 @@ For a suspected key or host compromise: pause/disarm affected switches if safe, 
 
 ## Dependency audit posture
 
-`pnpm audit` is configured with a historical ignore list (`package.json` → `pnpm.auditConfig.ignoreGhsas`, 18 entries). A full unfiltered audit during the maintenance sweep returned 20 advisories; every finding resolves exclusively through development-only chains (testcontainers/undici subtrees, Vite/eslint/jsdom/prettier/turbo/tsx tooling, drizzle-kit loaders). Zero findings reach production runtime paths — verified per finding, not assumed. Notable cases:
+`pnpm audit` is configured with a historical ignore list (`package.json` → `pnpm.auditConfig.ignoreGhsas`, 22 entries). A full unfiltered audit during the maintenance sweep returned 20 advisories; every finding resolves exclusively through development-only chains (testcontainers/undici subtrees, Vite/eslint/jsdom/prettier/turbo/tsx tooling, drizzle-kit loaders). Zero findings reach production runtime paths — verified per finding, not assumed. Notable cases:
 
 - `esbuild` development-server request forgery (moderate): present only as `drizzle-kit > @esbuild-kit/* > esbuild@0.18.20`; the vulnerable component is the esbuild dev server, which this repository never starts (drizzle-kit is used for `check`/migration inspection only). Not remediable by version bump — upstream still resolves to 0.18.20.
 - `@fastify/busboy` DoS + CRLF injection (high/moderate) and all `undici` findings: reachable only via testcontainers' vendored undici in test scope, never via the API's request path.

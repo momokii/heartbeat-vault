@@ -17,7 +17,7 @@ Standard-profile v1 implementation complete and deployed. Ultrawork loop deliver
 
 ## In Progress
 
-- [ ] None autonomous. Owner-blocked: CI `tests (api)` job red without public logs (green locally in every configuration); release-please red (likely Actions token permissions).
+- [ ] None autonomous. Owner-blocked: release-please red (likely Actions token permissions — Settings → Actions → General → Workflow permissions).
 
 ## Blocked
 

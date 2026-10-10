@@ -78,7 +78,7 @@ Copying `.env.example` manually is supported, but `./install.sh install` is safe
 | `MASTER_KEY`              | Server-side key-encryption key for stored payload envelopes. Keep it secret and backed up separately.                                                            |
 | `SESSION_SECRET`          | Reserved credential slot (generated at install, placeholder-checked). Sessions use opaque random tokens, not this value.                                         |
 | `POSTGRES_PASSWORD`       | PostgreSQL application password.                                                                                                                                 |
-| `BACKUP_ENCRYPTION_KEY`   | Enables encrypted installer backups; without it backups are explicitly warned as unencrypted.                                                                    |
+| `BACKUP_ENCRYPTION_KEY`   | Required for installer backups, which are always encrypted; without it backup refuses to run.                                                                    |
 | `HTTP_PORT`, `HTTPS_PORT` | Loopback Caddy ports in the base Compose profile.                                                                                                                |
 | `CADDY_BIND_IP`           | Host IP for Caddy's published 80/443; default `127.0.0.1` (loopback). Set to a single host IP such as a Tailnet address to reach the app from that network only. |
 | `APP_ENV`                 | Environment indicator used by verification policy.                                                                                                               |
@@ -91,11 +91,11 @@ Payloads use per-secret encryption keys wrapped by a versioned `MASTER_KEY`-deri
 
 ```bash
 ./install.sh backup
-./install.sh restore backups/backup-YYYYMMDDTHHMMSSZ.sql.gz --yes
+./install.sh restore --drill backups/backup-YYYYMMDDTHHMMSSZ.sql.gz.enc --yes
 ./install.sh upgrade
 ```
 
-Set `BACKUP_ENCRYPTION_KEY` before making real backups. Test restore in an isolated environment. `restore` overwrites the current database and deliberately requires `--yes`.
+Backups are always encrypted (`.sql.gz.enc`); a real `BACKUP_ENCRYPTION_KEY` must be set or backup refuses to run. Verify a backup with an isolated `--drill` restore before relying on it — never restore untrusted dumps into the live database. `restore --live` overwrites the current database and deliberately requires `--yes` plus a typed confirmation. See [Operations](docs/OPERATIONS.md) for the full backup/restore runbook and drill evidence.
 
 ## Verify a deployment
 
