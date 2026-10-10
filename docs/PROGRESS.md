@@ -212,12 +212,12 @@
 - [x] Test-release dry run (marked test messages through configured channels, rate-limited, TOTP-gated, no release-state mutation) with UI trigger. Oracle-verified.
 - [x] Deployed live (migrations applied, bundle hash-verified); verifier 19–20 PASS with only pre-existing warnings.
 
-## Wave 3f: CI observability and hardening — PARTIAL (blocked on CI log access)
+## Wave 3f: CI observability and hardening — DONE except release-please (owner action)
 
 - [x] Split tests into per-package matrix jobs so failures name their package publicly; added JUnit reporting with check annotations for the same reason.
-- [x] Fixed everything diagnosable without logs: phantom workspace dep (CI typecheck/build green since), Caddy smoke MASTER_KEY + preview URL, audit ignores, two timing-flaky web tests hardened with retries (assertions unchanged).
-- [x] Eliminated as causes (all verified): frozen-lockfile sync, Node skew (pristine ubuntu:24.04 + node:22 replica), audit gate, `CI=true` unhandled-rejection mode, CPU-constrained runs, Vitest-level issues (full suites green repeatedly: API 221, web 118, crypto 64, DB 16, e2e journey).
-- [ ] Gate Tests step (api package, fails ~76–97s in) and caddy-smoke job fail intermittently on GitHub runners with no public logs; release-please action step red. All three need owner GitHub access: failing step logs (Actions → run → failed job) or Settings → Actions → General → Workflow permissions (read-only token would explain release-please).
+- [x] Fixed everything diagnosable without logs: phantom workspace dep (CI typecheck/build green since), Caddy smoke MASTER_KEY + preview URL (green on CI), audit ignores, two timing-flaky web tests hardened with retries (assertions unchanged).
+- [x] Root-caused the CI api failure via the new annotations: every failing file errored with `Failed to resolve entry for package "@heartbeat-vault/crypto"` — the matrix jobs bypassed turbo's `^build` ordering so `dist/` never existed on fresh runners (masked locally by stale `dist/`). Fixed by building package + workspace dependencies before matrix tests; verified by deleting `dist/` and watching the rebuild; CI `tests (api)` green since.
+- [ ] Release-please action step still red after checkout/config/fetch-depth fixes; likely repository Actions token permissions — requires owner GitHub access (Settings → Actions → General → Workflow permissions).
 
 ## Wave 3e: Pause-only trusted delegates — DONE
 
