@@ -98,6 +98,45 @@ jobs:
           report_paths: '**/test-results/junit.xml'
           fail_on_failure: false
 
+      - name: Summarize test failure diagnostics
+        if: failure()
+        run: |
+          {
+            echo "## Test failure diagnostics (${{ matrix.package }})"
+            echo ""
+            echo "### Disk and memory"
+            df -h / | tail -1
+            free -g | head -2 || true
+            echo ""
+            echo "### Docker state"
+            docker ps --format '{{.Names}} ({{.Status}})' 2>/dev/null | head -20 || echo "docker unavailable"
+            docker system df 2>/dev/null | head -8 || true
+            echo ""
+            echo "### JUnit report"
+            ls -la "${{ matrix.package }}/test-results/" 2>/dev/null || ls -la "apps/${{ matrix.package }}/test-results/" 2>/dev/null || echo "no junit dir"
+            echo ""
+            echo "### Failing tests"
+            python3 - "$GITHUB_WORKSPACE" <<'EOF' || echo "junit parse unavailable"
+          import glob
+          import os
+          import xml.etree.ElementTree as ET
+          base = os.environ.get("GITHUB_WORKSPACE", ".")
+          files = glob.glob(os.path.join(base, "**/test-results/junit.xml"), recursive=True)
+          print("junit files:", files if files else "NONE FOUND")
+          for path in files:
+              try:
+                  root = ET.parse(path).getroot()
+              except Exception as exc:
+                  print(f"{path}: unparsable ({exc})")
+                  continue
+              for case in root.iter("testcase"):
+                  bad = list(case.iter("failure")) + list(case.iter("error"))
+                  if bad:
+                      print(f"FAILED: {case.get('classname')}::{case.get('name')}")
+                      print("  " + (bad[0].get("message") or "")[:300])
+          EOF
+          } >> "$GITHUB_STEP_SUMMARY"
+
   secrets:
     runs-on: ubuntu-latest
     timeout-minutes: 10
