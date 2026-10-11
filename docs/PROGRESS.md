@@ -233,3 +233,10 @@
 
 - The Phase 0 design document retains its historical `PROPOSED` label and its explicit approval was not separately recorded before subsequent directed implementation. The user later directed autonomous completion; this tracker does not fabricate a historical approval event.
 - GitHub Actions CI and CodeQL are verified green on live runs against this repository's remote; the release/GHCR/cosign release path remains unverified behind the owner-side release-please permission issue recorded above, and hardened-profile behavior remains externally unverified (deferred by ADR-007).
+
+## Remaining owner backlog (not known product defects)
+
+- [ ] Resolve the suspected GitHub Actions workflow-token permission issue affecting release-please (Settings → Actions → General → Workflow permissions), then verify the release/GHCR/cosign path on a live release.
+- [ ] Select the exact permissive license from the agreed MIT/Apache-2.0 family and add the corresponding license file.
+- [ ] Confirm and document whether the existing Node.js support range (`>=20.0.0 <23.0.0`) is the intended baseline (a maintenance-policy decision, not a runtime failure).
+- [ ] Decide whether to schedule or unblock the ADR-007 hardened Vault/OpenBao deployment profile as a post-v1 initiative; the standard profile remains the shipped and verified configuration.
