@@ -159,3 +159,11 @@
   **Alternatives Rejected:** Arbitrary-port restore (bypassable); exactly-once reminder claims (unprovable over SMTP); deleting failing e2e/UI tests instead of fixing selectors; committing vendor AGENTS.md content as project work (tracked separately per vendor instruction).
   **Security Implications:** No auth/session/crypto semantics weakened; all security-sensitive changes Oracle-reviewed with VERIFIED verdicts; audit coverage extended (delegate__, test_release_sent, reminder__).
   **Impact:** Waves 3a–3e in PROGRESS.md; API.md documents new endpoints; TASK-004 (backup drill) complete.
+
+- 2026-10-12 — **Decision:** Owner backlog resolution — license MIT, Node 22 baseline, ADR-007 stay-deferred; release-please remains owner-blocked.
+  **Date:** 2026-10-12
+  **Context:** `docs/PROGRESS.md` "Remaining owner backlog" listed four owner items; the user directed completion and chose MIT / Node 22 / stay-deferred when asked.
+  **Rationale:** MIT is the simplest permissive license for a single-household self-hosted tool with no patent-sensitive contribution expectations (Apache-2.0 rejected by user pick). Node 22 because CI, the release workflow, the live API runtime (v22.23.2), and the local toolchain (v22.23.3) already run 22, while `.nvmrc` pinned a stale 20 and Node 20 is past end-of-life; engines narrowed to `>=22.0.0 <23.0.0` and `.nvmrc` aligned. ADR-007 stays deferred: full Transit/Compose/installer/testcontainers/verifier implementation now is multi-day work with regression risk to the verified v1, and the backlog item as written asked for the scheduling decision, which the user made explicitly.
+  **Alternatives Rejected:** Apache-2.0 (user picked MIT); keeping the 20–22 split (leaves a stale `.nvmrc` and an EOL runtime in the support range); scheduling or implementing hardened now (user chose stay-deferred); changing GitHub Actions token settings from here (no `gh`/API admin access — genuinely owner-side).
+  **Security Implications:** None — license file, version pins, and decision records only; no auth/session/crypto semantics changed.
+  **Impact:** `LICENSE` (MIT), `package.json` (`license`, engines), `.nvmrc` 22, `docs/DESIGN.md` license line, `docs/PROGRESS.md` backlog checked, TASK-002 re-confirmed deferred, release-please/TASK-005 still owner-blocked.

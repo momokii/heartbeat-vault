@@ -14,6 +14,9 @@ Standard-profile v1 implementation complete and deployed. Ultrawork loop deliver
 - [x] GHSA ignore list reviewed per-finding (22 entries, all dev-only paths, zero production reachability) and documented in docs/SECURITY.md
 - [x] CI observability: per-package matrix jobs, JUnit annotations, phantom workspace dep fixed (CI typecheck/build green), Caddy smoke fixed (green), audit gate green
 - [x] Oracle reviews passed with VERIFIED verdicts: backup split, reminder delivery, scheduler isolation, delegate auth (incl. ambiguity + cancel flaws found and fixed), redaction, final gap review
+- [x] License decided 2026-10-12: MIT — `LICENSE` added (copyright Kelana Chandra Helyandika), `package.json` license field, DESIGN.md binding decisions updated
+- [x] Node.js baseline confirmed as 22 on 2026-10-12 — engines `>=22.0.0 <23.0.0`, `.nvmrc` 22; CI/release/live runtime (v22.23.2)/local (v22.23.3) already on 22
+- [x] ADR-007 hardened profile: user re-confirmed stay-deferred post-v1 on 2026-10-12; standard profile remains the shipped configuration
 
 ## In Progress
 
@@ -26,9 +29,9 @@ Standard-profile v1 implementation complete and deployed. Ultrawork loop deliver
 ## Open Questions (require user decisions)
 
 - Phase 0 design approval was never formally recorded (historical; not fabricated)
-- Hardened Vault/OpenBao profile: deferred by decision (ADR-007)
-- License: MIT vs Apache never finally picked
-- Node baseline: repo allows Node 20 (.nvmrc), CI/local run 22 — vitest 5.0.3 needs ≥22.12, so its bump is deferred until the baseline is decided
+- Hardened Vault/OpenBao profile: stay-deferred re-confirmed 2026-10-12 (ADR-007; TASK-002)
+- License: MIT decided 2026-10-12 (`LICENSE` + `package.json` field + DESIGN.md)
+- Node baseline: 22 confirmed 2026-10-12 (engines + `.nvmrc`); vitest 5.0.3 bump unblocked for a future maintenance pass (TASK-003 scope, not done here)
 
 ## Security Notes
 
@@ -39,4 +42,5 @@ Standard-profile v1 implementation complete and deployed. Ultrawork loop deliver
 ## Last Updated
 
 - Ultrawork loop session: all waves implemented, Oracle-verified, deployed, and pushed; CI fully green except release-please (needs owner token check); workspace cleaned.
+- 2026-10-12 backlog-resolution session: MIT license added, Node 22 baseline recorded, ADR-007 stay-deferred confirmed; release-please still owner-blocked (no `gh`/API admin access from here); changes committed and pushed.
   [Agent must update this timestamp and append a session summary after every session.]

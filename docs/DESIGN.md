@@ -3,7 +3,7 @@
 > Status: PROPOSED — awaiting user approval (Phase 0 gate). No implementation before approval.
 > Sources: `docs/BRIEF.md`, 5 librarian research briefs (2026-09-20), user answers 2026-09-20.
 > User decisions (binding): single-household deployment · Email+Webhook+Telegram v1 ·
-> GitHub Actions + GHCR · English-only · permissive license (MIT/Apache-2.0 family, exact pick pending) ·
+> GitHub Actions + GHCR · English-only · MIT license (see LICENSE) ·
 > threat priority data-at-rest · server-side automatic release · standard-only v1, hardened deferred to next-development todo.
 
 ## 1. Architecture (standard profile, v1)

@@ -237,6 +237,6 @@
 ## Remaining owner backlog (not known product defects)
 
 - [ ] Resolve the suspected GitHub Actions workflow-token permission issue affecting release-please (Settings → Actions → General → Workflow permissions), then verify the release/GHCR/cosign path on a live release.
-- [ ] Select the exact permissive license from the agreed MIT/Apache-2.0 family and add the corresponding license file.
-- [ ] Confirm and document whether the existing Node.js support range (`>=20.0.0 <23.0.0`) is the intended baseline (a maintenance-policy decision, not a runtime failure).
-- [ ] Decide whether to schedule or unblock the ADR-007 hardened Vault/OpenBao deployment profile as a post-v1 initiative; the standard profile remains the shipped and verified configuration.
+- [x] 2026-10-12 — License selected: MIT (`LICENSE`, copyright Kelana Chandra Helyandika); `package.json` declares `license: MIT`; `docs/DESIGN.md` binding decisions updated.
+- [x] 2026-10-12 — Node.js baseline confirmed as 22: `package.json` engines `>=22.0.0 <23.0.0`, `.nvmrc` 22; matches CI/release (22), live API runtime (v22.23.2), and local toolchain (v22.23.3).
+- [x] 2026-10-12 — ADR-007 hardened profile: user decision is stay-deferred post-v1; the standard profile remains the shipped configuration (logged in `.claude/state/DECISIONS_LOG.md`, TASK-002).

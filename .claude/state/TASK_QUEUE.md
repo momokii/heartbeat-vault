@@ -20,7 +20,7 @@
 | Task ID             | TASK-002                                                                                  |
 | Name                | Hardened profile (OpenBao vs Vault) follow-up                                             |
 | Priority            | Medium                                                                                    |
-| Status              | TODO (deferred by ADR-007 decision, not started)                                          |
+| Status              | TODO (deferred by ADR-007; stay-deferred re-confirmed by user 2026-10-12)                 |
 | Complexity          | L                                                                                         |
 | Depends On          | v1 standard profile (done)                                                                |
 | Scope               | Next-development todo per user: ADRs now, implementation later; never a release-path SPOF |
