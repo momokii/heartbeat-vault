@@ -143,3 +143,7 @@ Heartbeat Vault is provided as software, not legal, medical, security, estate-pl
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, test requirements, and security contribution rules. API endpoints are described in [docs/API.md](docs/API.md).
+
+## License
+
+Heartbeat Vault is licensed under the MIT License. See [LICENSE](LICENSE).

@@ -66,7 +66,7 @@ One caveat survives. Vault enterprise token formats and some auth method respons
 | Operational cost on single host | Same container shape as Vault, same storage and HA options, no license cost, community support only | Same container shape, no license cost for self hosted CE, but BSL adds compliance cost if you distribute or offer hosted |
 | Why it fits the project default | License aligns with the permissive project intent from `docs/PROGRESS.md` key decisions, without forcing users through BSL review | Useful alternative for teams that already run Vault and prefer its larger ecosystem, kept as a switch not a second code path |
 
-The license question was left pending in Design §9. This ADR picks OpenBao as the candidate default because it keeps the permissive project posture simple, while keeping Vault CE as a supported alternative behind the same API shape. If the maintainer later confirms a BSL preference, the ADR can be superseded with a one line swap of default, without changing the Transit contract.
+The license question was left pending in Design §9 (decided 2026-10-12: MIT — see `LICENSE`; the OpenBao-default reasoning below stands unchanged). This ADR picks OpenBao as the candidate default because it keeps the permissive project posture simple, while keeping Vault CE as a supported alternative behind the same API shape. If the maintainer later confirms a BSL preference, the ADR can be superseded with a one line swap of default, without changing the Transit contract.
 
 ### Off hot release path design (the SPOF guard)
 

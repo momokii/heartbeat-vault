@@ -98,7 +98,7 @@ Testcontainers Postgres 17 + `@testcontainers/vault`-pattern (used in later hard
 4. Clock contract (DB time, skew budget, `CLOCK_UNCERTAIN`) — PROPOSED
 5. Envelope crypto suite + rotation procedure — PROPOSED
 6. Server-side release v1 (shares deferred) — PROPOSED
-7. Hardened key service: OpenBao default candidate vs Vault CE alt (license-pending) — DEFERRED impl, ADR now
+7. Hardened key service: OpenBao default candidate vs Vault CE alt (license: MIT since 2026-10-12) — DEFERRED impl, ADR now
 8. Caddy vs Traefik (Caddy candidate) — DEFERRED impl, ADR now
 9. Auth libraries (argon2/TOTP/WebAuthn/rate-limit) — PROPOSED
 10. Release process (release-please + GHCR + keyless signing) — PROPOSED

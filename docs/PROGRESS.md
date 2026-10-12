@@ -228,6 +228,7 @@
 ## Key decisions
 
 - 2026-09-20 (user answers): deployment = single-household, one host, documented HA path; channels v1 = Email + Webhook + Telegram (Matrix/SFTP deferred); CI = GitHub Actions + GHCR; UI/docs = English only; license = permissive MIT/Apache-2.0 family (exact pick pending); threat priority = stolen-data-at-rest first (full STRIDE + ASVS map still required); release model = server-side automatic release for v1; hardened profile = NOT in v1 — standard-only v1, hardened (Vault vs OpenBao) deferred to next-development todo with ADRs.
+- 2026-10-12 (user answers): license = MIT (`LICENSE` added; `package.json` + DESIGN.md updated); Node baseline = 22 (engines `>=22.0.0 <23.0.0`, `.nvmrc` 22); ADR-007 hardened profile stay-deferred re-confirmed.
 
 ## Open issues
 
